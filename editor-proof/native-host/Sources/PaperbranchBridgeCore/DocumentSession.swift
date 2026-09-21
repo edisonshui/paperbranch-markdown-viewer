@@ -24,6 +24,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public private(set) var isDirty = false
     public private(set) var lastError: Error?
     public var dirtyStateDidChange: ((Bool) -> Void)?
+    public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
 
     public init(coordinator: BridgeCoordinator) {
         self.coordinator = coordinator
@@ -39,6 +40,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         guard Self.accepts(url) else { throw DocumentSessionError.unsupportedFile(url) }
         let markdown = try String(contentsOf: url, encoding: .utf8)
         try await coordinator.waitForNativeBridge()
+        coordinator.authorizeImages(for: url)
         try await coordinator.loadDocument(markdown: markdown)
         fileURL = url.standardizedFileURL
         isDirty = false
@@ -81,5 +83,9 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool) {
         isDirty = dirty
         dirtyStateDidChange?(dirty)
+    }
+
+    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double) {
+        navigationStateDidChange?(outline, progress)
     }
 }

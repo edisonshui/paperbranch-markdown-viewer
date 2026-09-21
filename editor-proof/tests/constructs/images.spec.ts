@@ -75,4 +75,13 @@ test.describe("images", () => {
       parseSemanticMarkdown(expectedEdited),
     );
   });
+
+  test("shows a clear broken-image state without blocking formatted editing", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate((md) => window.editorContract.loadMarkdown(md), "![missing](missing.png)\n\nStill editable.\n");
+
+    const image = page.locator("#editor-root img:not(.ProseMirror-separator)");
+    await expect(image).toHaveClass(/paperbranch-broken-image/);
+    await expect(page.locator("#editor-root .ProseMirror")).toContainText("Still editable.");
+  });
 });

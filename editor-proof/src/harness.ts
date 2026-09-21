@@ -7,7 +7,7 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import "prosemirror-view/style/prosemirror.css";
 import { taskListItemView } from "./task-list-item-view";
 import { classifyMarkdown, type AdmissionResult } from "./admission";
-import { installNativeBridge, reportDirtyState } from "./native-bridge";
+import { installNativeBridge, reportDirtyState, reportNavigationState } from "./native-bridge";
 
 let editor: Editor | undefined;
 // Set only while the currently loaded document is blocked. Its presence
@@ -19,6 +19,43 @@ let blockedSource: string | undefined;
 // Compared against the live serialized content to derive dirty state.
 let baseline = "";
 let dirty = false;
+let imageObserver = new MutationObserver(() => configureLocalImages());
+
+function nativeImageURL(reference: string): string {
+  const bytes = new TextEncoder().encode(reference);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const token = btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return `paperbranch-image://resource/${token}`;
+}
+
+function isRelativeImageReference(reference: string): boolean {
+  return !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(reference);
+}
+
+function configureLocalImages(): void {
+  const root = document.getElementById("editor-root");
+  if (!root) return;
+  for (const image of root.querySelectorAll<HTMLImageElement>("img")) {
+    const reference = image.dataset.paperbranchImageReference ?? image.getAttribute("src");
+    if (!reference || !isRelativeImageReference(reference)) continue;
+    image.dataset.paperbranchImageReference = reference;
+    image.classList.add("paperbranch-local-image");
+    // The proof page remains usable in an ordinary browser. In WebKit's
+    // native host, use the scoped scheme rather than granting file access.
+    if (window.webkit && image.getAttribute("src") !== nativeImageURL(reference)) {
+      image.setAttribute("src", nativeImageURL(reference));
+    }
+  }
+}
+
+document.addEventListener("error", (event) => {
+  const image = event.target;
+  if (image instanceof HTMLImageElement && image.classList.contains("paperbranch-local-image")) {
+    image.classList.add("paperbranch-broken-image");
+    if (!image.alt) image.alt = "Image unavailable";
+  }
+}, true);
 
 function setDirty(next: boolean): void {
   if (dirty === next) return;
@@ -57,6 +94,7 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
       ctx.set(defaultValueCtx, markdown);
       ctx.get(listenerCtx).markdownUpdated((_ctx, current) => {
         setDirty(current !== baseline);
+        reportNavigation();
       });
     })
     .use(commonmark)
@@ -66,6 +104,11 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
     .use(listener)
     .create();
 
+  configureLocalImages();
+  imageObserver.disconnect();
+  imageObserver.observe(root, { childList: true, subtree: true });
+  reportNavigation();
+
   return admission;
 }
 
@@ -74,6 +117,34 @@ function getMarkdownContent(): string {
   if (!editor) throw new Error("loadMarkdown must run before getMarkdown");
   return editor.action(getMarkdown());
 }
+
+function getOutline(): Array<{ id: string; text: string; level: number }> {
+  const root = document.getElementById("editor-root");
+  if (!root || blockedSource !== undefined) return [];
+  return Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")).map((heading, index) => {
+    const id = `heading-${index}`;
+    heading.setAttribute("data-paperbranch-outline-id", id);
+    return { id, text: heading.textContent?.trim() ?? "", level: Number(heading.tagName.slice(1)) };
+  });
+}
+
+function selectOutline(id: string): boolean {
+  const root = document.getElementById("editor-root");
+  const headings = root ? Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")) : [];
+  const heading = headings[Number(id.replace("heading-", ""))];
+  if (!heading) return false;
+  heading.setAttribute("data-paperbranch-outline-id", id);
+  heading.scrollIntoView({ block: "start", behavior: "smooth" });
+  return true;
+}
+
+function getReadingProgress(): number {
+  const root = document.scrollingElement;
+  if (!root || root.scrollHeight <= root.clientHeight) return 0;
+  return Math.max(0, Math.min(1, root.scrollTop / (root.scrollHeight - root.clientHeight)));
+}
+
+function reportNavigation(): void { reportNavigationState({ outline: getOutline(), progress: getReadingProgress() }); }
 
 async function externalReplace(markdown: string): Promise<{ applied: boolean }> {
   if (dirty) return { applied: false };
@@ -92,8 +163,13 @@ function saveSucceeded(markdown: string): void {
 window.editorContract = {
   loadMarkdown,
   getMarkdown: getMarkdownContent,
+  getOutline,
+  selectOutline,
+  getReadingProgress,
   isDirty: () => dirty,
 };
+
+window.addEventListener("scroll", reportNavigation, { passive: true });
 
 installNativeBridge({
   loadDocument: loadMarkdown,
@@ -101,4 +177,5 @@ installNativeBridge({
   isDirty: () => dirty,
   externalReplace,
   saveSucceeded,
+  selectOutline,
 });
