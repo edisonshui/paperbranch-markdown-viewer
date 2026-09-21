@@ -19,6 +19,43 @@ let blockedSource: string | undefined;
 // Compared against the live serialized content to derive dirty state.
 let baseline = "";
 let dirty = false;
+let imageObserver = new MutationObserver(() => configureLocalImages());
+
+function nativeImageURL(reference: string): string {
+  const bytes = new TextEncoder().encode(reference);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const token = btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return `paperbranch-image://resource/${token}`;
+}
+
+function isRelativeImageReference(reference: string): boolean {
+  return !/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(reference);
+}
+
+function configureLocalImages(): void {
+  const root = document.getElementById("editor-root");
+  if (!root) return;
+  for (const image of root.querySelectorAll<HTMLImageElement>("img")) {
+    const reference = image.dataset.paperbranchImageReference ?? image.getAttribute("src");
+    if (!reference || !isRelativeImageReference(reference)) continue;
+    image.dataset.paperbranchImageReference = reference;
+    image.classList.add("paperbranch-local-image");
+    // The proof page remains usable in an ordinary browser. In WebKit's
+    // native host, use the scoped scheme rather than granting file access.
+    if (window.webkit && image.getAttribute("src") !== nativeImageURL(reference)) {
+      image.setAttribute("src", nativeImageURL(reference));
+    }
+  }
+}
+
+document.addEventListener("error", (event) => {
+  const image = event.target;
+  if (image instanceof HTMLImageElement && image.classList.contains("paperbranch-local-image")) {
+    image.classList.add("paperbranch-broken-image");
+    if (!image.alt) image.alt = "Image unavailable";
+  }
+}, true);
 
 function setDirty(next: boolean): void {
   if (dirty === next) return;
@@ -65,6 +102,10 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
     .use(history)
     .use(listener)
     .create();
+
+  configureLocalImages();
+  imageObserver.disconnect();
+  imageObserver.observe(root, { childList: true, subtree: true });
 
   return admission;
 }

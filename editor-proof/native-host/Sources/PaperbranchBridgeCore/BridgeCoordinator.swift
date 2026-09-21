@@ -42,9 +42,12 @@ public final class BridgeCoordinator: NSObject {
     public weak var delegate: BridgeCoordinatorDelegate?
     public let webView: WKWebView
     public private(set) var isDirty = false
+    private let localImageSchemeHandler: LocalImageSchemeHandler
 
     public init(configuration: WKWebViewConfiguration? = nil) {
         let configuration = configuration ?? WKWebViewConfiguration()
+        localImageSchemeHandler = LocalImageSchemeHandler()
+        configuration.setURLSchemeHandler(localImageSchemeHandler, forURLScheme: LocalImageSchemeHandler.scheme)
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)
@@ -53,6 +56,12 @@ public final class BridgeCoordinator: NSObject {
 
     public func load(url: URL) {
         webView.load(URLRequest(url: url))
+    }
+
+    /// Native code authorizes image data for the currently open document.
+    /// JavaScript never receives this URL or a file-reading capability.
+    public func authorizeImages(for documentURL: URL?) {
+        localImageSchemeHandler.authorizeImages(for: documentURL)
     }
 
     /// Sends document content across the deliberately small native/editor

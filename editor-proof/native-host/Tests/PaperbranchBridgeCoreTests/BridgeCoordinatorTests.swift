@@ -111,6 +111,35 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLocalImageRemainsVisibleThroughEditSaveAndReopen() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("paperbranch-local-image-workflow-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let documentURL = directory.appendingPathComponent("image document.md")
+        try "# Local image\n\n![A local image](photo.png)\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8KwAAAABJRU5ErkJggg==")!
+        try png.write(to: directory.appendingPathComponent("photo.png"))
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        let initiallyVisible = try await pollImageIsVisible(in: coordinator)
+        XCTAssertTrue(initiallyVisible)
+
+        try await insertExclamationMark(in: coordinator)
+        _ = try await pollIsDirty(coordinator, expecting: true)
+        try await session.save()
+        XCTAssertTrue(try String(contentsOf: documentURL, encoding: .utf8).contains("photo.png"))
+
+        try await session.open(documentURL)
+        let visibleAfterReopen = try await pollImageIsVisible(in: coordinator)
+        XCTAssertTrue(visibleAfterReopen)
+    }
+
+    @MainActor
     func testFailedSaveKeepsTheDocumentDirty() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("paperbranch-failed-save-\(UUID().uuidString)", isDirectory: true)
@@ -277,6 +306,18 @@ final class BridgeCoordinatorTests: XCTestCase {
             """,
             contentWorld: .page
         )
+    }
+
+    @MainActor
+    private func pollImageIsVisible(in coordinator: BridgeCoordinator) async throws -> Bool {
+        for _ in 0..<20 {
+            let visible = (try await coordinator.webView.evaluateJavaScript(
+                "(() => { const image = document.querySelector('.paperbranch-local-image'); return !!image && image.complete && image.naturalWidth > 0 && image.src.startsWith('paperbranch-image:'); })()"
+            )) as? Bool ?? false
+            if visible { return true }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return false
     }
 
     private func snapshotProofDirectoryContents() throws -> [String] {

@@ -39,6 +39,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         guard Self.accepts(url) else { throw DocumentSessionError.unsupportedFile(url) }
         let markdown = try String(contentsOf: url, encoding: .utf8)
         try await coordinator.waitForNativeBridge()
+        coordinator.authorizeImages(for: url)
         try await coordinator.loadDocument(markdown: markdown)
         fileURL = url.standardizedFileURL
         isDirty = false
