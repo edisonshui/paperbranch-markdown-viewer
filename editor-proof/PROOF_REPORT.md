@@ -1,11 +1,11 @@
 # Editor proof report (Ticket 01)
 
-Status: **pending one manual check.** Milkdown is selected, gated by an
+Status: **complete.** Milkdown is selected, gated by an
 editor-admission seam (see [ADR 0004](../docs/adr/0004-block-unsafe-markdown-before-the-editor.md)),
 and the minimal native WKWebView host (`native-host/`) implements the
 Command-S, external-content, and bridge-scope requirements. The automated
-suites verify the code paths. A focused-editor Command-S still needs manual
-confirmation in the visible host.
+suites verify the code paths, and OS-level input verified Command-S with the
+visible editor focused.
 
 ## What was tested
 
@@ -137,13 +137,11 @@ weight for a throwaway proof host) runs the harness inside a real
   blocked, not loaded; and the only registered message handler and native
   JS surface are exactly the narrow ones described above.
 
-What is verified by `native-host/test.sh` (automated, no human needed) and
-what would still need a human at the keyboard once (confirming the literal
-physical Command-S keystroke reaches a visible, focused window) is spelled
-out in `native-host/README.md`. An attempt to close that last gap with
-`osascript`/System Events UI scripting was tried and abandoned: it hangs on
-an Accessibility permission prompt, which reintroduces exactly the
-human-in-the-loop step it was meant to avoid.
+`native-host/test.sh` verifies the bridge without a human. On 2026-09-21,
+an Accessibility-permissioned UI controller focused and edited the visible
+Document view, then sent OS-level Command-S. The host received 140 characters
+of serialized Markdown and confirmed that it wrote no file. See
+`native-host/README.md` for the reproduction steps.
 
 ## How to reproduce
 

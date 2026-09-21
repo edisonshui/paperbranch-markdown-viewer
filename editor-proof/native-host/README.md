@@ -40,7 +40,7 @@ native-host/test.sh
 `PAPERBRANCH_PROOF_HARNESS_URL` overrides the harness URL if something else
 is already using port 5183.
 
-## What is and isn't verified
+## What is verified
 
 The `test.sh` suite programmatically verifies, against a real `WKWebView`
 (not a mock):
@@ -58,25 +58,12 @@ The `test.sh` suite programmatically verifies, against a real `WKWebView`
   `window.paperbranchNativeBridge` exposes exactly `requestSave` and
   `externalReplace` -- nothing resembling file access.
 
-What this does **not** verify, and would need a human (or
-Accessibility-permissioned UI scripting, which itself needs a human to
-grant the permission once): the literal OS-level delivery of a physical
-Command-S keystroke into a visible, focused window. `AppDelegate.swift`
-wires a `Save` `NSMenuItem` with `keyEquivalent: "s"` and
-`keyEquivalentModifierMask: [.command]`, targeting `handleSave()`, which
-calls the same `BridgeCoordinator.requestSave()` the tests exercise
-directly. AppKit resolves a Command-key event against the main menu's key
-equivalents before it reaches a view's own `keyDown` handling, which is why
-this reaches the native host even with the `WKWebView` focused -- but that
-resolution is standard OS behavior this proof relies on rather than
-re-verifies; what's proof-specific (the menu item exists with the right key
-equivalent and calls the save path with no file write) is what the test
-suite covers. Manually confirming the physical keystroke means: run
-`run.sh`, click into the loaded document, and press Command-S -- the
-console should print a line like `Command-S requested a save. Received N
-characters of serialized Markdown. No file was written.`
+The visible focused-editor path was also verified on 2026-09-21. An
+Accessibility-permissioned UI controller focused the loaded Document view,
+typed `!`, and sent OS-level Command-S. The host printed
+`Command-S requested a save. Received 140 characters of serialized Markdown. No file was written.`
 
-An attempt to verify this via `osascript`/System Events UI scripting was
-tried and abandoned: it hangs waiting on an Accessibility permission
-prompt, which is exactly the human-in-the-loop step this was trying to
-avoid, not a way around it.
+To repeat the check, run `run.sh`, click into the loaded document, and press
+Command-S. `AppDelegate.swift` wires a `Save` `NSMenuItem` with
+`keyEquivalent: "s"` and `keyEquivalentModifierMask: [.command]` to
+the same `BridgeCoordinator.requestSave()` path covered by `test.sh`.
