@@ -67,6 +67,76 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertFalse(sidebar.isCollapsed)
     }
 
+    func testLibraryWorkflowRestoresAndRefreshesPreservingValidSidebarState() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-restored-library")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let essays = libraryURL.appendingPathComponent("Essays", isDirectory: true)
+        try FileManager.default.createDirectory(at: essays, withIntermediateDirectories: true)
+        let selected = essays.appendingPathComponent("selected.md")
+        try "# Selected\n".write(to: selected, atomically: true, encoding: .utf8)
+
+        let bookmarkStore = TestLibraryBookmarkStore()
+        let firstLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: bookmarkStore, codec: TestLibraryBookmarkCodec()))
+        try firstLaunch.chooseLibrary(at: libraryURL)
+        firstLaunch.selectDocument(at: selected)
+        firstLaunch.toggleFolder(try XCTUnwrap(firstLaunch.library?.root.children.first))
+
+        let restoredLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: bookmarkStore, codec: TestLibraryBookmarkCodec()))
+        XCTAssertEqual(try restoredLaunch.restoreLibrary(), .restored)
+        XCTAssertEqual(restoredLaunch.selectedDocumentURL, selected.standardizedFileURL)
+        XCTAssertFalse(restoredLaunch.sidebarState.isExpanded(try XCTUnwrap(restoredLaunch.library?.root.children.first)))
+
+        try "# Added\n".write(to: essays.appendingPathComponent("added.markdown"), atomically: true, encoding: .utf8)
+        try restoredLaunch.refreshLibrary()
+        XCTAssertEqual(restoredLaunch.selectedDocumentURL, selected.standardizedFileURL)
+        XCTAssertEqual(restoredLaunch.library?.root.children.first?.children.map(\.name), ["added.markdown", "selected.md"])
+        XCTAssertFalse(restoredLaunch.sidebarState.isExpanded(try XCTUnwrap(restoredLaunch.library?.root.children.first)))
+    }
+
+    func testSecurityScopedBookmarkPersistsAndRestoresLibrary() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-security-scoped-library")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let suiteName = "PaperbranchBridgeCoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsLibraryBookmarkStore(defaults: defaults)
+
+        let choosingLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store))
+        try choosingLaunch.chooseLibrary(at: libraryURL)
+
+        let restoredLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store))
+        XCTAssertEqual(try restoredLaunch.restoreLibrary(), .restored)
+        XCTAssertEqual(restoredLaunch.library?.rootURL, libraryURL.standardizedFileURL)
+    }
+
+    @MainActor
+    func testUnavailableLibraryDoesNotDiscardDirtyDocumentViewEdits() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-unavailable-library")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("draft.md")
+        try "# Draft\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let store = TestLibraryBookmarkStore()
+        let choosingLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: TestLibraryBookmarkCodec()))
+        try choosingLaunch.chooseLibrary(at: libraryURL)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let dirtyContent = try await coordinator.requestSave()
+
+        let unavailableLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: UnavailableLibraryBookmarkCodec()))
+        XCTAssertEqual(try unavailableLaunch.restoreLibrary(), .unavailable)
+        XCTAssertNil(unavailableLaunch.library)
+        XCTAssertTrue(session.isDirty)
+        let remainingContent = try await coordinator.requestSave()
+        XCTAssertEqual(remainingContent, dirtyContent)
+    }
+
     @MainActor
     func testLibraryWorkflowSelectsNestedDocumentsWithoutWritingOnSwitch() async throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library-workflow")
@@ -426,4 +496,24 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTFail("expected operation to throw", file: file, line: line)
         } catch {}
     }
+}
+
+private final class TestLibraryBookmarkStore: LibraryBookmarkStore {
+    private var record: LibraryBookmarkRecord?
+    func load() -> LibraryBookmarkRecord? { record }
+    func save(_ record: LibraryBookmarkRecord) { self.record = record }
+    func clear() { record = nil }
+}
+
+private struct TestLibraryBookmarkCodec: LibraryBookmarkCodec {
+    func makeBookmark(for url: URL) throws -> Data { Data(url.path.utf8) }
+    func resolveBookmark(_ data: Data) throws -> URL {
+        guard let path = String(data: data, encoding: .utf8) else { throw LibraryAccessError.unavailable }
+        return URL(fileURLWithPath: path)
+    }
+}
+
+private struct UnavailableLibraryBookmarkCodec: LibraryBookmarkCodec {
+    func makeBookmark(for url: URL) throws -> Data { Data() }
+    func resolveBookmark(_ data: Data) throws -> URL { throw LibraryAccessError.unavailable }
 }

@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private let sidebarController = LibrarySidebarViewController()
     private let documentController = NSViewController()
     private let splitController = NSSplitViewController()
+    private let libraryWorkflow = LibraryWorkflow()
+    private var libraryRefreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let coordinator = BridgeCoordinator()
@@ -17,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.openDocument(at: url) }
+        sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
         documentController.view = coordinator.webView
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
@@ -33,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         window.makeKeyAndOrderFront(nil)
         installMenu()
         coordinator.load(url: HarnessLocation.url)
+        restoreLibrary()
+        libraryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshLibraryIfNeeded() }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -76,8 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                let library = try LibraryBrowser.choose(url)
-                self?.sidebarController.show(library)
+                try self?.libraryWorkflow.chooseLibrary(at: url)
+                self?.showLibrary()
                 self?.splitController.splitViewItems.first?.isCollapsed = false
             } catch { self?.presentError(error, for: url) }
         }
@@ -93,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func openDocument(at url: URL) {
         Task { [weak self] in guard let self else { return }; do {
             try await documentSession.open(url)
+            libraryWorkflow.selectDocument(at: url)
             sidebarController.select(url: url)
             updateWindowTitle()
         } catch { presentError(error, for: url) } }
@@ -102,7 +110,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         Task { [weak self] in guard let self, documentSession.fileURL != nil else { return }; do { try await documentSession.save(); updateWindowTitle() } catch { presentError(error, for: documentSession.fileURL) } }
     }
 
-    @objc private func toggleLibrarySidebar() { splitController.splitViewItems.first?.isCollapsed.toggle() }
+    @objc private func toggleLibrarySidebar() {
+        splitController.splitViewItems.first?.isCollapsed.toggle()
+        libraryWorkflow.toggleSidebar()
+    }
+
+    private func restoreLibrary() {
+        do {
+            switch try libraryWorkflow.restoreLibrary() {
+            case .restored:
+                showLibrary()
+                if let selected = libraryWorkflow.selectedDocumentURL { openDocument(at: selected) }
+            case .unavailable:
+                sidebarController.showUnavailableLibrary()
+            }
+        } catch {
+            sidebarController.showUnavailableLibrary()
+        }
+    }
+
+    private func refreshLibraryIfNeeded() {
+        guard libraryWorkflow.library != nil else { return }
+        do {
+            try libraryWorkflow.refreshLibrary()
+            showLibrary()
+        } catch {
+            // This intentionally does not touch documentSession. A lost
+            // Library must never discard unsaved Document view edits.
+            libraryWorkflow.libraryAccessBecameUnavailable()
+            sidebarController.showUnavailableLibrary()
+        }
+    }
+
+    private func showLibrary() {
+        guard let library = libraryWorkflow.library else { return }
+        sidebarController.show(library, sidebarState: libraryWorkflow.sidebarState, selectedDocumentURL: libraryWorkflow.selectedDocumentURL)
+        splitController.splitViewItems.first?.isCollapsed = libraryWorkflow.sidebarState.isCollapsed
+    }
 
     private func updateWindowTitle() {
         guard let url = documentSession.fileURL else { window.title = "Paperbranch"; window.isDocumentEdited = false; return }

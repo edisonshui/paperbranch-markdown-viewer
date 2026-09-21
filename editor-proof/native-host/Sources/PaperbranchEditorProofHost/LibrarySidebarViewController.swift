@@ -4,15 +4,22 @@ import PaperbranchBridgeCore
 final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate {
     var chooseLibrary: (() -> Void)?
     var selectDocument: ((URL) -> Void)?
+    var folderExpansionChanged: ((LibraryNode, Bool) -> Void)?
     private let outlineView = NSOutlineView()
+    private let statusLabel = NSTextField(labelWithString: "Library access is unavailable. Reconnect or choose another Library.")
+    private let chooseButton = NSButton(title: "Choose Library…", target: nil, action: nil)
     private var library: LibraryBrowser?
 
     override func loadView() {
         let root = NSView()
         let title = NSTextField(labelWithString: "Paperbranch")
         title.font = .systemFont(ofSize: 16, weight: .semibold)
-        let chooseButton = NSButton(title: "Choose Library…", target: self, action: #selector(chooseLibraryPressed))
-        let header = NSStackView(views: [title, NSView(), chooseButton])
+        chooseButton.target = self
+        chooseButton.action = #selector(chooseLibraryPressed)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.isHidden = true
+        let header = NSStackView(views: [title, statusLabel, NSView(), chooseButton])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 10, right: 10)
@@ -41,10 +48,23 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         view = root
     }
 
-    func show(_ library: LibraryBrowser) {
+    func show(_ library: LibraryBrowser, sidebarState: LibrarySidebarState = LibrarySidebarState(), selectedDocumentURL: URL? = nil) {
         self.library = library
+        statusLabel.isHidden = true
+        chooseButton.title = "Choose Library…"
         outlineView.reloadData()
-        outlineView.expandItem(nil, expandChildren: true)
+        outlineView.expandItem(nil, expandChildren: false)
+        for node in library.root.flattened() where node.kind == .folder && node.url != library.root.url {
+            if sidebarState.isExpanded(node) { outlineView.expandItem(node) }
+        }
+        select(url: selectedDocumentURL)
+    }
+
+    func showUnavailableLibrary() {
+        library = nil
+        statusLabel.isHidden = false
+        chooseButton.title = "Choose another Library…"
+        outlineView.reloadData()
     }
 
     func select(url: URL?) {
@@ -91,5 +111,15 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     func outlineViewSelectionDidChange(_ notification: Notification) {
         guard let node = outlineView.item(atRow: outlineView.selectedRow) as? LibraryNode, node.kind == .document else { return }
         selectDocument?(node.url)
+    }
+
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        guard let node = notification.userInfo?["NSObject"] as? LibraryNode else { return }
+        folderExpansionChanged?(node, true)
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        guard let node = notification.userInfo?["NSObject"] as? LibraryNode else { return }
+        folderExpansionChanged?(node, false)
     }
 }

@@ -52,8 +52,29 @@ public struct LibrarySidebarState {
         }
     }
 
+    public mutating func setExpanded(_ node: LibraryNode, expanded: Bool) {
+        guard node.kind == .folder else { return }
+        if expanded {
+            collapsedFolders.remove(node.url)
+        } else {
+            collapsedFolders.insert(node.url)
+        }
+    }
+
     public mutating func toggleCollapsed() {
         isCollapsed.toggle()
+    }
+
+    public mutating func restore(isCollapsed: Bool, collapsedFolders: Set<URL>) {
+        self.isCollapsed = isCollapsed
+        self.collapsedFolders = collapsedFolders
+    }
+
+    public var collapsedFolderURLs: Set<URL> { collapsedFolders }
+
+    public mutating func discardFoldersNotIn(_ library: LibraryBrowser) {
+        let folders = Set(library.root.flattened().filter { $0.kind == .folder }.map(\.url))
+        collapsedFolders.formIntersection(folders)
     }
 }
 
@@ -77,6 +98,10 @@ public final class LibraryBrowser {
         }
         let root = try makeFolder(at: rootURL, fileManager: fileManager)
         return LibraryBrowser(rootURL: rootURL, root: root)
+    }
+
+    public func refresh(fileManager: FileManager = .default) throws {
+        root = try Self.makeFolder(at: rootURL, fileManager: fileManager)
     }
 
     private static func makeFolder(at url: URL, fileManager: FileManager) throws -> LibraryNode {
