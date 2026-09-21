@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         This Markdown was loaded by the native host.
 
         Edit this text, then press Command-S while the editor has focus.
-        """
+        """ + "\n"
 
     private var window: NSWindow!
     private var coordinator: BridgeCoordinator!
