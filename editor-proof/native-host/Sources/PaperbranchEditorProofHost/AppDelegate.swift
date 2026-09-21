@@ -8,6 +8,14 @@ import PaperbranchBridgeCore
 /// out of scope for Ticket 01.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let sampleMarkdown = """
+        # Paperbranch editor proof
+
+        This Markdown was loaded by the native host.
+
+        Edit this text, then press Command-S while the editor has focus.
+        """
+
     private var window: NSWindow!
     private var coordinator: BridgeCoordinator!
 
@@ -87,6 +95,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: BridgeCoordinatorDelegate {
+    func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator) {
+        Task {
+            do {
+                let applied = try await coordinator.externalReplace(markdown: Self.sampleMarkdown)
+                guard applied else {
+                    print("[paperbranch-proof-host] sample Markdown was not loaded")
+                    return
+                }
+                print("[paperbranch-proof-host] loaded sample Markdown")
+            } catch {
+                print("[paperbranch-proof-host] failed to load sample Markdown: \(error)")
+            }
+        }
+    }
+
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool) {
         print("[paperbranch-proof-host] dirty state changed: \(dirty)")
     }

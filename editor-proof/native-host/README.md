@@ -17,7 +17,8 @@ none of that is in scope here.
   `window.paperbranchNativeBridge`. This is a library target so both the
   app and the test target share it.
 - `Sources/PaperbranchEditorProofHost/` -- the app itself: one window, one
-  `WKWebView`, and a Save menu item bound to Command-S.
+  `WKWebView`, deterministic sample Markdown loaded after navigation, and a
+  Save menu item bound to Command-S.
 - `Tests/PaperbranchBridgeCoreTests/` -- drives a real, off-screen
   `WKWebView` through `BridgeCoordinator` to verify the bridge without a
   human at the keyboard (see "What is and isn't verified" below).

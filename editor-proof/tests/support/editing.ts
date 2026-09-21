@@ -22,16 +22,19 @@ export async function placeCursorAtEnd(locator: Locator): Promise<void> {
   });
 }
 
-/**
- * Focuses the editor, collapses the selection to the end of `target`'s own
- * text, and types `text` there.
- *
- * Clicking `target` and then immediately overriding the selection is racy:
- * ProseMirror resolves its own selection from the click asynchronously and
- * can clobber our override afterwards. Using `.focus()` instead of a mouse
- * click avoids that race, since it does not go through ProseMirror's
- * pointer-event selection handling.
- */
+/** Collapses the browser selection immediately after `locator`. */
+export async function placeCursorAfter(locator: Locator): Promise<void> {
+  await locator.evaluate((el) => {
+    const range = document.createRange();
+    range.setStartAfter(el);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+}
+
 /**
  * Focuses the editor, collapses the selection to the end of `target`, and
  * dispatches a synthetic clipboard paste event there with the given
@@ -59,6 +62,16 @@ export async function pasteAtEndOf(
   }, clipboard);
 }
 
+/**
+ * Focuses the editor, collapses the selection to the end of `target`'s own
+ * text, and types `text` there.
+ *
+ * Clicking `target` and then immediately overriding the selection is racy:
+ * ProseMirror resolves its own selection from the click asynchronously and
+ * can clobber our override afterwards. Using `.focus()` instead of a mouse
+ * click avoids that race, since it does not go through ProseMirror's
+ * pointer-event selection handling.
+ */
 export async function typeAtEndOf(
   page: Page,
   editorRoot: Locator,
@@ -67,5 +80,17 @@ export async function typeAtEndOf(
 ): Promise<void> {
   await editorRoot.evaluate((el) => (el as HTMLElement).focus());
   await placeCursorAtEnd(target);
+  await page.keyboard.type(text);
+}
+
+/** Focuses the editor and types `text` immediately after `target`. */
+export async function typeAfter(
+  page: Page,
+  editorRoot: Locator,
+  target: Locator,
+  text: string,
+): Promise<void> {
+  await editorRoot.evaluate((el) => (el as HTMLElement).focus());
+  await placeCursorAfter(target);
   await page.keyboard.type(text);
 }

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done
+**Status:** claimed
 
 - [x] The proof loads and renders headings, emphasis, ordered and unordered lists, links, images, block quotes, fenced code blocks, tables, task lists, and strikethrough.
 - [x] The proof performs a representative edit to each supported construct and serializes the result to Markdown.
@@ -16,7 +16,7 @@
 - [x] One repeatable test command runs the complete editor contract and reports individual fixture failures. (`npm test` in `editor-proof/`; every passing assertion is a positive claim, none accept a contract failure as an outcome.)
 - [x] Milkdown is accepted only if every required check passes. If it fails, the same contract runs against TOAST UI Editor and records the selected editor. (TOAST UI Editor was run and failed more broadly than Milkdown; see PROOF_REPORT.md. Milkdown is selected, gated by the editor-admission seam, which brings the complete contract to passing.)
 - [x] The proof runs inside a minimal macOS `WKWebView` host, not only in a normal browser. (`editor-proof/native-host`, a SwiftPM app; `native-host/run.sh` runs it against the harness.)
-- [x] With focus inside the editor, `Command-S` reaches the native host and requests the current serialized Markdown without writing a file automatically. (`AppDelegate.swift`'s Save menu item, keyEquivalent "s" + Command, routed through AppKit's standard key-equivalent resolution; `requestSave()` verified by `native-host/test.sh` to return live content and write nothing to disk. The literal physical-keystroke delivery into a focused window was not verified by an automated tool -- see `native-host/README.md` for exactly what was and wasn't verified, and how to confirm it manually.)
+- [ ] With focus inside the editor, `Command-S` reaches the native host and requests the current serialized Markdown without writing a file automatically. (`AppDelegate.swift`'s Save menu item, keyEquivalent "s" + Command, routes through AppKit's standard key-equivalent resolution. `requestSave()` is verified by `native-host/test.sh` to return live content and write nothing to disk. The physical keystroke still needs manual confirmation in the visible host.)
 - [x] Simulated external-content messages replace clean editor content and preserve dirty editor content for later conflict handling. (`externalReplace`, verified by both `editor-proof` (`tests/constructs/native-bridge.spec.ts`) and `native-host/test.sh`.)
 - [x] The native/editor bridge exposes only the document information needed for editing, saving, safe reloads, and conflict notifications. JavaScript receives no unrestricted file-system access. (One `WKScriptMessageHandler` name (`"paperbranch"`, dirty-state only) and two native-facing JS calls (`requestSave`, `externalReplace`); verified by `native-host/test.sh`.)
 

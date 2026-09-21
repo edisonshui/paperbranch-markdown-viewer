@@ -1,10 +1,11 @@
 # Editor proof report (Ticket 01)
 
-Status: **complete.** Milkdown is selected, gated by an editor-admission
-seam (see [ADR 0004](../docs/adr/0004-block-unsafe-markdown-before-the-editor.md)),
-and the minimal native WKWebView host (`native-host/`) implements and
-verifies the remaining Command-S, external-content, and bridge-scope
-requirements.
+Status: **pending one manual check.** Milkdown is selected, gated by an
+editor-admission seam (see [ADR 0004](../docs/adr/0004-block-unsafe-markdown-before-the-editor.md)),
+and the minimal native WKWebView host (`native-host/`) implements the
+Command-S, external-content, and bridge-scope requirements. The automated
+suites verify the code paths. A focused-editor Command-S still needs manual
+confirmation in the visible host.
 
 ## What was tested
 

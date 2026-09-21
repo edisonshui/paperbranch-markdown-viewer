@@ -10,6 +10,7 @@ public enum BridgeError: Error {
 
 @MainActor
 public protocol BridgeCoordinatorDelegate: AnyObject {
+    func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator)
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool)
 }
 
@@ -46,6 +47,7 @@ public final class BridgeCoordinator: NSObject {
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)
+        webView.navigationDelegate = self
     }
 
     public func load(url: URL) {
@@ -85,6 +87,12 @@ public final class BridgeCoordinator: NSObject {
             throw BridgeError.unexpectedResult
         }
         return applied
+    }
+}
+
+extension BridgeCoordinator: WKNavigationDelegate {
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        delegate?.bridgeCoordinatorDidFinishLoadingHarness(self)
     }
 }
 

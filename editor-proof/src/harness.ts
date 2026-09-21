@@ -4,6 +4,7 @@ import { gfm } from "@milkdown/kit/preset/gfm";
 import { getMarkdown } from "@milkdown/kit/utils";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
+import "prosemirror-view/style/prosemirror.css";
 import { taskListItemView } from "./task-list-item-view";
 import { classifyMarkdown, type AdmissionResult } from "./admission";
 import { installNativeBridge, reportDirtyState } from "./native-bridge";

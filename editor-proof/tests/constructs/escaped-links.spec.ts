@@ -38,17 +38,16 @@ test.describe("links with parentheses and escaped characters", () => {
     const link = page.locator("#editor-root a");
     await typeAtEndOf(page, page.locator("#editor-root .ProseMirror"), link, " v2");
 
-    await expect(link).toHaveText("design doc (draft) v2");
+    await expect(link).toHaveText("design doc (draft) v2");
     await expect(link).toHaveAttribute(
       "href",
       "https://example.com/docs/design_(draft).pdf",
     );
 
-    // Proof finding (also seen with images): a space typed right at the end
-    // of a mark's text becomes a non-breaking space (U+00A0), the browser's
-    // usual guard against collapsing a space at a formatting boundary.
+    // The official ProseMirror stylesheet preserves the plain space typed
+    // at the formatting boundary.
     const expectedEdited =
-      "See the [design doc (draft) v2](https://example.com/docs/design_\\(draft\\).pdf) for details.\n";
+      "See the [design doc (draft) v2](https://example.com/docs/design_\\(draft\\).pdf) for details.\n";
 
     const serialized = await page.evaluate(() => window.editorContract.getMarkdown());
     expect(parseSemanticMarkdown(serialized)).toEqual(

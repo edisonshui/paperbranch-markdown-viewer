@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { parseSemanticMarkdown } from "../support/semantic-markdown";
-import { typeAtEndOf } from "../support/editing";
+import { typeAfter } from "../support/editing";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,28 +41,25 @@ test.describe("images", () => {
     await page.evaluate((md) => window.editorContract.loadMarkdown(md), fixture);
 
     const firstParagraph = page.locator("#editor-root p").first();
-    await typeAtEndOf(
+    const image = page.locator("#editor-root p > img:not(.ProseMirror-separator)").first();
+    await typeAfter(
       page,
       page.locator("#editor-root .ProseMirror"),
-      firstParagraph,
+      image,
       " caption",
     );
 
-    const image = page.locator("#editor-root p > img:not(.ProseMirror-separator)").first();
     await expect(image).toHaveAttribute("src", "./assets/diagram.png");
-    await expect(firstParagraph).toHaveText(" caption");
+    await expect(firstParagraph).toHaveText(" caption");
 
-    // Proof finding: a space typed immediately after an atomic inline node
-    // (here, an image) becomes a non-breaking space (U+00A0), not a plain
-    // space, since that is standard `contenteditable` behavior guarding
-    // against the browser collapsing a space at a text/atomic-node boundary.
-    // The visual result is the same; the serialized character is not.
+    // The official ProseMirror stylesheet preserves the plain space typed
+    // after the atomic inline image node.
     const expectedEdited = [
       '![Relative diagram](./assets/diagram.png "Diagram title") caption',
       "",
       "![Absolute photo](https://example.com/photo.png)",
       "",
-    ].join("\n").replace(") caption", ") caption");
+    ].join("\n");
 
     const serialized = await page.evaluate(() => window.editorContract.getMarkdown());
     expect(parseSemanticMarkdown(serialized)).toEqual(
