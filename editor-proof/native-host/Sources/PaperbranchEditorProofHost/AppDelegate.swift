@@ -97,6 +97,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: BridgeCoordinatorDelegate {
     func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator) {
         Task {
+            guard await waitForEditorBridge(in: coordinator) else {
+                print("[paperbranch-proof-host] editor bridge did not become ready")
+                return
+            }
+
             do {
                 let applied = try await coordinator.externalReplace(markdown: Self.sampleMarkdown)
                 guard applied else {
@@ -108,6 +113,18 @@ extension AppDelegate: BridgeCoordinatorDelegate {
                 print("[paperbranch-proof-host] failed to load sample Markdown: \(error)")
             }
         }
+    }
+
+    private func waitForEditorBridge(in coordinator: BridgeCoordinator) async -> Bool {
+        for _ in 0..<50 {
+            let ready =
+                (try? await coordinator.webView.evaluateJavaScript(
+                    "typeof window.paperbranchNativeBridge !== 'undefined'"
+                )) as? Bool ?? false
+            if ready { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return false
     }
 
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool) {
