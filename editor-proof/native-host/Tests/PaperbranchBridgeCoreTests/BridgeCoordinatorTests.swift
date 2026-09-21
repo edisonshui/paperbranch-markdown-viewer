@@ -27,6 +27,34 @@ import XCTest
 /// Run with `native-host/test.sh`, which starts the same Vite dev server
 /// the Playwright suite uses before running `swift test`.
 final class BridgeCoordinatorTests: XCTestCase {
+    @MainActor
+    func testLibraryDocumentWorkflowReceivesNavigationStateAndRoutesOutlineSelection() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-document-navigation")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let firstURL = directory.appendingPathComponent("first.md")
+        let secondURL = directory.appendingPathComponent("second.md")
+        try "# First\n\n## Details\n".write(to: firstURL, atomically: true, encoding: .utf8)
+        try "No headings here.\n\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        var outline: [DocumentOutlineEntry] = []
+        var progress = -1.0
+        session.navigationStateDidChange = { receivedOutline, receivedProgress in
+            outline = receivedOutline
+            progress = receivedProgress
+        }
+        try await session.open(firstURL)
+
+        XCTAssertEqual(outline.map(\.text), ["First", "Details"])
+        let selected = try await coordinator.selectOutline(id: "heading-1")
+        XCTAssertTrue(selected)
+
+        try await session.open(secondURL)
+        XCTAssertEqual(outline, [])
+        XCTAssertEqual(progress, 0)
+    }
     func testApplicationBundleRegistersMarkdownEditorDocumentTypes() throws {
         let plistURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -500,7 +528,7 @@ final class BridgeCoordinatorTests: XCTestCase {
             try await coordinator.webView.evaluateJavaScript(
                 "Object.keys(window.paperbranchNativeBridge).sort()"
             ) as? [String]
-        XCTAssertEqual(surface, ["externalReplace", "loadDocument", "requestSave", "saveSucceeded"])
+        XCTAssertEqual(surface, ["externalReplace", "loadDocument", "requestSave", "saveSucceeded", "selectOutline"])
 
         XCTAssertEqual(BridgeCoordinator.messageHandlerName, "paperbranch")
     }

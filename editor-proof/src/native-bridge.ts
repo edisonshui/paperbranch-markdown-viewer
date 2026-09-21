@@ -29,12 +29,11 @@ export interface NativeBridgeHost {
   externalReplace(markdown: string): Promise<{ applied: boolean }>;
   /** Native -> JS. Records the exact serialized content native finished writing. */
   saveSucceeded(markdown: string): void;
+  selectOutline?(id: string): boolean;
 }
 
-interface OutgoingMessage {
-  type: "dirtyStateChanged";
-  dirty: boolean;
-}
+interface NavigationState { outline: Array<{ id: string; text: string; level: number }>; progress: number; }
+type OutgoingMessage = { type: "dirtyStateChanged"; dirty: boolean } | ({ type: "navigationStateChanged" } & NavigationState);
 
 function postToNative(message: OutgoingMessage): void {
   window.webkit?.messageHandlers?.paperbranch?.postMessage(message);
@@ -47,6 +46,8 @@ export function reportDirtyState(dirty: boolean): void {
   postToNative({ type: "dirtyStateChanged", dirty });
 }
 
+export function reportNavigationState(state: NavigationState): void { postToNative({ type: "navigationStateChanged", ...state }); }
+
 /** Installs the fixed, narrow surface the native host calls into. This is
  * the only thing `window` exposes for the native layer to drive -- no
  * generic eval hook, no file-system access. */
@@ -56,5 +57,6 @@ export function installNativeBridge(host: NativeBridgeHost): void {
     requestSave: () => host.getMarkdown(),
     externalReplace: (markdown: string) => host.externalReplace(markdown),
     saveSucceeded: (markdown: string) => host.saveSucceeded(markdown),
+    selectOutline: (id: string) => host.selectOutline?.(id) ?? false,
   };
 }

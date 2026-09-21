@@ -24,6 +24,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public private(set) var isDirty = false
     public private(set) var lastError: Error?
     public var dirtyStateDidChange: ((Bool) -> Void)?
+    public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
 
     public init(coordinator: BridgeCoordinator) {
         self.coordinator = coordinator
@@ -82,5 +83,9 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool) {
         isDirty = dirty
         dirtyStateDidChange?(dirty)
+    }
+
+    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double) {
+        navigationStateDidChange?(outline, progress)
     }
 }

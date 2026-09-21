@@ -9,10 +9,17 @@ public enum BridgeError: Error {
     case bridgeNotReady
 }
 
+public struct DocumentOutlineEntry: Equatable {
+    public let id: String
+    public let text: String
+    public let level: Int
+}
+
 @MainActor
 public protocol BridgeCoordinatorDelegate: AnyObject {
     func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator)
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool)
+    func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double)
 }
 
 /// Owns the one `WKWebView` this proof host displays and the fixed message
@@ -119,6 +126,15 @@ public final class BridgeCoordinator: NSObject {
         )
     }
 
+    public func selectOutline(id: String) async throws -> Bool {
+        let result = try await webView.callAsyncJavaScript(
+            "return window.paperbranchNativeBridge.selectOutline(id);",
+            arguments: ["id": id], contentWorld: .page
+        )
+        guard let selected = result as? Bool else { throw BridgeError.unexpectedResult }
+        return selected
+    }
+
     public func waitForNativeBridge() async throws {
         for _ in 0..<50 {
             let ready =
@@ -153,6 +169,13 @@ extension BridgeCoordinator: WKScriptMessageHandler {
             let dirty = (body["dirty"] as? Bool) ?? false
             isDirty = dirty
             delegate?.bridgeCoordinator(self, dirtyStateChanged: dirty)
+        case "navigationStateChanged":
+            let outline = (body["outline"] as? [[String: Any]] ?? []).compactMap { entry -> DocumentOutlineEntry? in
+                guard let id = entry["id"] as? String, let text = entry["text"] as? String, let level = entry["level"] as? Int else { return nil }
+                return DocumentOutlineEntry(id: id, text: text, level: level)
+            }
+            let progress = (body["progress"] as? NSNumber)?.doubleValue ?? 0
+            delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)))
         default:
             break
         }

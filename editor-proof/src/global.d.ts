@@ -3,6 +3,9 @@ import type { AdmissionResult } from "./admission";
 export interface EditorContract {
   loadMarkdown(markdown: string): Promise<AdmissionResult>;
   getMarkdown(): string;
+  getOutline(): Array<{ id: string; text: string; level: number }>;
+  selectOutline(id: string): boolean;
+  getReadingProgress(): number;
   /** Test/observability hook mirroring the dirty state the native bridge
    * receives via `dirtyStateChanged` messages. */
   isDirty(): boolean;
@@ -13,6 +16,7 @@ export interface PaperbranchNativeBridge {
   requestSave(): string;
   externalReplace(markdown: string): Promise<{ applied: boolean }>;
   saveSucceeded(markdown: string): void;
+  selectOutline(id: string): boolean;
 }
 
 declare global {

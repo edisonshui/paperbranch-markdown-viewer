@@ -21,9 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
         documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
+        documentSession.navigationStateDidChange = { [weak self] outline, progress in self?.sidebarController.showDocumentNavigation(outline: outline, progress: progress) }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
+        sidebarController.selectOutline = { [weak self] id in self?.selectOutline(id) }
         documentController.view = coordinator.webView
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
@@ -138,6 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         sidebarController.select(url: url)
         updateWindowTitle()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func selectOutline(_ id: String) {
+        Task { [weak self] in _ = try? await self?.documentSession.coordinator.selectOutline(id: id) }
     }
 
     private func openStandaloneDocument(at url: URL) async throws {

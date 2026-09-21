@@ -7,7 +7,7 @@ import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import "prosemirror-view/style/prosemirror.css";
 import { taskListItemView } from "./task-list-item-view";
 import { classifyMarkdown, type AdmissionResult } from "./admission";
-import { installNativeBridge, reportDirtyState } from "./native-bridge";
+import { installNativeBridge, reportDirtyState, reportNavigationState } from "./native-bridge";
 
 let editor: Editor | undefined;
 // Set only while the currently loaded document is blocked. Its presence
@@ -94,6 +94,7 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
       ctx.set(defaultValueCtx, markdown);
       ctx.get(listenerCtx).markdownUpdated((_ctx, current) => {
         setDirty(current !== baseline);
+        reportNavigation();
       });
     })
     .use(commonmark)
@@ -106,6 +107,7 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
   configureLocalImages();
   imageObserver.disconnect();
   imageObserver.observe(root, { childList: true, subtree: true });
+  reportNavigation();
 
   return admission;
 }
@@ -115,6 +117,34 @@ function getMarkdownContent(): string {
   if (!editor) throw new Error("loadMarkdown must run before getMarkdown");
   return editor.action(getMarkdown());
 }
+
+function getOutline(): Array<{ id: string; text: string; level: number }> {
+  const root = document.getElementById("editor-root");
+  if (!root || blockedSource !== undefined) return [];
+  return Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")).map((heading, index) => {
+    const id = `heading-${index}`;
+    heading.setAttribute("data-paperbranch-outline-id", id);
+    return { id, text: heading.textContent?.trim() ?? "", level: Number(heading.tagName.slice(1)) };
+  });
+}
+
+function selectOutline(id: string): boolean {
+  const root = document.getElementById("editor-root");
+  const headings = root ? Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")) : [];
+  const heading = headings[Number(id.replace("heading-", ""))];
+  if (!heading) return false;
+  heading.setAttribute("data-paperbranch-outline-id", id);
+  heading.scrollIntoView({ block: "start", behavior: "smooth" });
+  return true;
+}
+
+function getReadingProgress(): number {
+  const root = document.scrollingElement;
+  if (!root || root.scrollHeight <= root.clientHeight) return 0;
+  return Math.max(0, Math.min(1, root.scrollTop / (root.scrollHeight - root.clientHeight)));
+}
+
+function reportNavigation(): void { reportNavigationState({ outline: getOutline(), progress: getReadingProgress() }); }
 
 async function externalReplace(markdown: string): Promise<{ applied: boolean }> {
   if (dirty) return { applied: false };
@@ -133,8 +163,13 @@ function saveSucceeded(markdown: string): void {
 window.editorContract = {
   loadMarkdown,
   getMarkdown: getMarkdownContent,
+  getOutline,
+  selectOutline,
+  getReadingProgress,
   isDirty: () => dirty,
 };
+
+window.addEventListener("scroll", reportNavigation, { passive: true });
 
 installNativeBridge({
   loadDocument: loadMarkdown,
@@ -142,4 +177,5 @@ installNativeBridge({
   isDirty: () => dirty,
   externalReplace,
   saveSucceeded,
+  selectOutline,
 });

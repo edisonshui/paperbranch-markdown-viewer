@@ -5,10 +5,13 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     var chooseLibrary: (() -> Void)?
     var selectDocument: ((URL) -> Void)?
     var folderExpansionChanged: ((LibraryNode, Bool) -> Void)?
+    var selectOutline: ((String) -> Void)?
     private let outlineView = NSOutlineView()
     private let statusLabel = NSTextField(labelWithString: "Library access is unavailable. Reconnect or choose another Library.")
     private let chooseButton = NSButton(title: "Choose Library…", target: nil, action: nil)
     private var library: LibraryBrowser?
+    private let navigationStack = NSStackView()
+    private let progressLabel = NSTextField(labelWithString: "Reading progress: 0%")
 
     override func loadView() {
         let root = NSView()
@@ -36,7 +39,13 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         scroll.documentView = outlineView
         scroll.hasVerticalScroller = true
 
-        let stack = NSStackView(views: [header, scroll])
+        navigationStack.orientation = .vertical
+        navigationStack.spacing = 2
+        let navigationHeader = NSTextField(labelWithString: "Document outline")
+        navigationHeader.font = .systemFont(ofSize: 11, weight: .semibold)
+        navigationStack.addArrangedSubview(navigationHeader)
+        navigationStack.addArrangedSubview(progressLabel)
+        let stack = NSStackView(views: [header, scroll, navigationStack])
         stack.orientation = .vertical
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
@@ -47,6 +56,24 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
         view = root
     }
+
+    func showDocumentNavigation(outline: [DocumentOutlineEntry], progress: Double) {
+        navigationStack.arrangedSubviews.dropFirst(2).forEach { navigationStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+        if outline.isEmpty {
+            navigationStack.addArrangedSubview(NSTextField(labelWithString: "No headings in this document."))
+        } else {
+            for entry in outline {
+                let button = NSButton(title: String(repeating: "  ", count: max(0, entry.level - 1)) + entry.text, target: self, action: #selector(outlinePressed(_:)))
+                button.identifier = NSUserInterfaceItemIdentifier(entry.id)
+                button.alignment = .left
+                button.bezelStyle = .inline
+                navigationStack.addArrangedSubview(button)
+            }
+        }
+        progressLabel.stringValue = "Reading progress: \(Int((max(0, min(1, progress)) * 100).rounded()))%"
+    }
+
+    @objc private func outlinePressed(_ sender: NSButton) { if let id = sender.identifier?.rawValue { selectOutline?(id) } }
 
     func show(_ library: LibraryBrowser, sidebarState: LibrarySidebarState = LibrarySidebarState(), selectedDocumentURL: URL? = nil) {
         self.library = library
