@@ -572,6 +572,197 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testDirtyDocumentShowsConflictForExternalModificationWithoutReplacingEdits() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-dirty-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("conflicted.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: false, encoding: .utf8)
+
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        let currentContent = try await coordinator.requestSave()
+        XCTAssertTrue(becameConflicted)
+        XCTAssertEqual(currentContent, keptContent)
+        XCTAssertTrue(session.isDirty)
+    }
+
+    @MainActor
+    func testReloadDiskVersionReplacesConflictedEditsAndClearsStates() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-reload-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("reload.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        try "# Disk version\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+
+        try await session.reloadDiskVersion()
+
+        let current = try await coordinator.requestSave()
+        XCTAssertTrue(current.contains("Disk version"))
+        XCTAssertFalse(session.isDirty)
+        XCTAssertNil(session.conflict)
+    }
+
+    @MainActor
+    func testKeepEditingRetainsConflictedEditsWithoutWritingDisk() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-keep-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("keep.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        let diskContent = "# Disk version\n"
+        try diskContent.write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+
+        session.keepEditing()
+
+        let current = try await coordinator.requestSave()
+        XCTAssertEqual(current, keptContent)
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), diskContent)
+        XCTAssertTrue(session.isDirty)
+        XCTAssertNil(session.conflict)
+    }
+
+    @MainActor
+    func testSaveAfterKeepingConflictRequiresConfirmationAndLeavesBothVersionsUnchanged() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-cancel-overwrite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("overwrite.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        try "# First disk version\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+        session.keepEditing()
+        let latestDiskContent = "# Latest disk version\n"
+        try latestDiskContent.write(to: documentURL, atomically: false, encoding: .utf8)
+
+        await XCTAssertThrowsErrorAsync { try await session.save() }
+
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), latestDiskContent)
+        let currentContent = try await coordinator.requestSave()
+        XCTAssertEqual(currentContent, keptContent)
+        XCTAssertTrue(session.isDirty)
+    }
+
+    @MainActor
+    func testConfirmedSaveAfterKeepingConflictOverwritesLatestDiskVersion() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-confirm-overwrite")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("confirm.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        try "# External version\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+        session.keepEditing()
+
+        try await session.save(overwritingExternalChanges: true)
+
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), keptContent)
+        XCTAssertFalse(session.isDirty)
+        XCTAssertNil(session.conflict)
+    }
+
+    @MainActor
+    func testRepeatedExternalChangesKeepEditsAndReloadTheLatestDiskVersion() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-repeated-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("repeated.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        try "# First external version\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+        session.keepEditing()
+
+        let latestDiskContent = "# Second external version\n"
+        try latestDiskContent.write(to: documentURL, atomically: true, encoding: .utf8)
+        let conflictedAgain = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(conflictedAgain)
+        let currentContent = try await coordinator.requestSave()
+        XCTAssertEqual(currentContent, keptContent)
+
+        try await session.reloadDiskVersion()
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), latestDiskContent)
+        let reloadedContent = try await coordinator.requestSave()
+        XCTAssertTrue(reloadedContent.contains("Second external version"))
+    }
+
+    @MainActor
+    func testConflictedDocumentRemainsDirtyForTheStandardCloseWorkflow() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-conflicted-close")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("close.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        try "# External version\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+
+        XCTAssertTrue(becameConflicted)
+        XCTAssertTrue(session.isDirty, "AppDelegate routes dirty sessions through Save, Cancel, and Discard before close")
+    }
+
+    @MainActor
     func testExternalReplacePreservesDirtyContent() async throws {
         let coordinator = makeCoordinator()
         try await waitForHarnessReady(coordinator)
@@ -705,6 +896,20 @@ final class BridgeCoordinatorTests: XCTestCase {
     ) async -> Bool {
         for _ in 0..<attempts {
             if session.availability == expected { return true }
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+        return false
+    }
+
+    @MainActor
+    private func pollConflict(
+        of session: DocumentSession,
+        expecting expected: DocumentConflict,
+        attempts: Int = 40,
+        intervalNanoseconds: UInt64 = 50_000_000
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if session.conflict == expected { return true }
             try? await Task.sleep(nanoseconds: intervalNanoseconds)
         }
         return false

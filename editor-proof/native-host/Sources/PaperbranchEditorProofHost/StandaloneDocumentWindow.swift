@@ -29,7 +29,9 @@ final class StandaloneDocumentWindow {
             window.isDocumentEdited = false
             return
         }
-        window.title = session.availability == .available ? url.lastPathComponent : "\(url.lastPathComponent) (Unavailable)"
+        if session.availability != .available { window.title = "\(url.lastPathComponent) (Unavailable)" }
+        else if session.conflict != nil { window.title = "\(url.lastPathComponent) (Conflict)" }
+        else { window.title = url.lastPathComponent }
         window.isDocumentEdited = session.isDirty
     }
 }

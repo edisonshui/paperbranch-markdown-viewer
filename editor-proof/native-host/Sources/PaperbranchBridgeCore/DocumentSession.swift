@@ -3,6 +3,7 @@ import Foundation
 public enum DocumentSessionError: LocalizedError {
     case unsupportedFile(URL)
     case noDocument
+    case overwriteConfirmationRequired(URL)
 
     public var errorDescription: String? {
         switch self {
@@ -10,6 +11,8 @@ public enum DocumentSessionError: LocalizedError {
             return "\(url.lastPathComponent) is not a Markdown document."
         case .noDocument:
             return "No Markdown document is open."
+        case let .overwriteConfirmationRequired(url):
+            return "\(url.lastPathComponent) changed on disk and requires confirmation before overwrite."
         }
     }
 }
@@ -17,6 +20,10 @@ public enum DocumentSessionError: LocalizedError {
 public enum DocumentAvailability: Equatable {
     case available
     case unavailable
+}
+
+public enum DocumentConflict: Equatable {
+    case externalChange(URL)
 }
 
 /// Native ownership for one open Markdown document. It is intentionally
@@ -28,9 +35,11 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public private(set) var fileURL: URL?
     public private(set) var isDirty = false
     public private(set) var availability: DocumentAvailability = .available
+    public private(set) var conflict: DocumentConflict?
     public private(set) var lastError: Error?
     public var dirtyStateDidChange: ((Bool) -> Void)?
     public var availabilityDidChange: ((DocumentAvailability) -> Void)?
+    public var conflictDidChange: ((DocumentConflict?) -> Void)?
     public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
     private var lastDiskMarkdown: String?
     private var fileChangeMonitor: FileChangeMonitor?
@@ -56,6 +65,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         fileURL = documentURL
         lastDiskMarkdown = markdown
         isDirty = false
+        setConflict(nil)
         setAvailability(.available)
         lastError = nil
         fileChangeMonitor = FileChangeMonitor(documentURL: documentURL) { [weak self] in
@@ -67,19 +77,42 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
 
     /// Serializes and writes only for an explicit native save command. A
     /// failure deliberately leaves the editor baseline and dirty state alone.
-    public func save() async throws {
+    public func save(overwritingExternalChanges: Bool = false) async throws {
         guard let fileURL else { throw DocumentSessionError.noDocument }
         do {
+            let currentDiskMarkdown = try String(contentsOf: fileURL, encoding: .utf8)
+            if currentDiskMarkdown != lastDiskMarkdown, !overwritingExternalChanges {
+                throw DocumentSessionError.overwriteConfirmationRequired(fileURL)
+            }
             let markdown = try await coordinator.requestSave()
             try coordinatedWrite(markdown, to: fileURL)
             try await coordinator.saveSucceeded(markdown: markdown)
             lastDiskMarkdown = markdown
             isDirty = false
+            setConflict(nil)
             lastError = nil
         } catch {
             lastError = error
             throw error
         }
+    }
+
+    /// Resolves an external-change conflict by replacing the in-memory
+    /// Document view with the version currently on disk.
+    public func reloadDiskVersion() async throws {
+        guard let fileURL else { throw DocumentSessionError.noDocument }
+        let markdown = try String(contentsOf: fileURL, encoding: .utf8)
+        try await coordinator.loadDocument(markdown: markdown)
+        lastDiskMarkdown = markdown
+        isDirty = false
+        setConflict(nil)
+        setAvailability(.available)
+    }
+
+    /// Resolves the immediate prompt while retaining the in-memory Document
+    /// view. The latest disk baseline remains recorded for a later save.
+    public func keepEditing() {
+        setConflict(nil)
     }
 
     private func coordinatedWrite(_ markdown: String, to url: URL) throws {
@@ -101,20 +134,22 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     /// path and compares real bytes with the session's completed disk version
     /// before it changes the editor.
     private func reconcileFileSystemSignal() async {
-        guard let fileURL, let lastDiskMarkdown else { return }
+        guard let fileURL, let baselineMarkdown = lastDiskMarkdown else { return }
         do {
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 if !isDirty { setAvailability(.unavailable) }
                 return
             }
             let diskMarkdown = try String(contentsOf: fileURL, encoding: .utf8)
-            guard diskMarkdown != lastDiskMarkdown else {
+            guard diskMarkdown != baselineMarkdown else {
                 setAvailability(.available)
                 return
             }
-            // Ticket 09 owns the conflict state. Ticket 08 must leave a
-            // dirty editor entirely untouched, including its disk baseline.
-            guard !isDirty else { return }
+            guard !isDirty else {
+                lastDiskMarkdown = diskMarkdown
+                setConflict(.externalChange(fileURL))
+                return
+            }
             guard try await coordinator.externalReplace(markdown: diskMarkdown) else { return }
             self.lastDiskMarkdown = diskMarkdown
             setAvailability(.available)
@@ -127,6 +162,12 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         guard self.availability != availability else { return }
         self.availability = availability
         availabilityDidChange?(availability)
+    }
+
+    private func setConflict(_ conflict: DocumentConflict?) {
+        guard self.conflict != conflict else { return }
+        self.conflict = conflict
+        conflictDidChange?(conflict)
     }
 
     public func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator) {}
