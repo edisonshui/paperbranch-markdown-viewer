@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private var window: NSWindow!
     private var documentSession: DocumentSession!
     private let sidebarController = LibrarySidebarViewController()
-    private let documentController = NSViewController()
+    private var documentController: DocumentPresentationViewController!
     private let splitController = NSSplitViewController()
     private let libraryWorkflow = LibraryWorkflow()
     private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
@@ -21,12 +21,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
         documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
+        documentSession.availabilityDidChange = { [weak self] availability in
+            self?.documentController.show(availability: availability)
+            self?.updateWindowTitle()
+        }
+        documentSession.conflictDidChange = { [weak self] conflict in
+            guard let self else { return }
+            self.updateWindowTitle()
+            self.presentConflict(conflict, for: self.documentSession, in: self.window)
+        }
         documentSession.navigationStateDidChange = { [weak self] outline, progress in self?.sidebarController.showDocumentNavigation(outline: outline, progress: progress) }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
         sidebarController.selectOutline = { [weak self] id in self?.selectOutline(id) }
-        documentController.view = coordinator.webView
+        documentController = DocumentPresentationViewController(webView: coordinator.webView)
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
 
@@ -149,6 +158,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func openStandaloneDocument(at url: URL) async throws {
         let standalone = StandaloneDocumentWindow(delegate: self)
         standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
+        standalone.session.availabilityDidChange = { [weak standalone] availability in
+            standalone?.presentation.show(availability: availability)
+            standalone?.updateTitle()
+        }
+        standalone.session.conflictDidChange = { [weak self, weak standalone] conflict in
+            guard let self, let standalone else { return }
+            standalone.updateTitle()
+            self.presentConflict(conflict, for: standalone.session, in: standalone.window)
+        }
         try await standalone.session.open(url)
         standalone.updateTitle()
         standalone.window.makeKeyAndOrderFront(nil)
@@ -156,8 +174,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 
     @objc private func handleSave() {
-        let session = activeDocumentSession
-        Task { [weak self] in guard let self, let session, session.fileURL != nil else { return }; do { try await session.save(); updateWindowTitle() } catch { presentError(error, for: session.fileURL) } }
+        guard let session = activeDocumentSession, session.fileURL != nil else { return }
+        save(session, in: window(for: session))
     }
 
     @objc private func toggleLibrarySidebar() {
@@ -204,7 +222,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             return
         }
         guard let url = documentSession.fileURL else { window.title = "Paperbranch"; window.isDocumentEdited = false; return }
-        window.title = url.lastPathComponent; window.isDocumentEdited = documentSession.isDirty
+        if documentSession.availability != .available { window.title = "\(url.lastPathComponent) (Unavailable)" }
+        else if documentSession.conflict != nil { window.title = "\(url.lastPathComponent) (Conflict)" }
+        else { window.title = url.lastPathComponent }
+        window.isDocumentEdited = documentSession.isDirty
     }
 
     private var activeDocumentSession: DocumentSession? {
@@ -216,12 +237,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let alert = NSAlert(error: error); alert.messageText = "Could not open or save \(url?.lastPathComponent ?? "document")"; alert.beginSheetModal(for: window)
     }
 
+    private func presentConflict(_ conflict: DocumentConflict?, for session: DocumentSession, in owner: NSWindow) {
+        guard case let .externalChange(url)? = conflict else { return }
+        let alert = NSAlert()
+        alert.messageText = "Changes conflict in \(url.lastPathComponent)"
+        alert.informativeText = "This Markdown document changed on disk while it has unsaved edits."
+        alert.addButton(withTitle: "Reload Disk")
+        alert.addButton(withTitle: "Keep Editing")
+        alert.beginSheetModal(for: owner) { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                Task { do { try await session.reloadDiskVersion(); self.updateWindowTitle() } catch { self.presentError(error, for: session.fileURL) } }
+            } else {
+                session.keepEditing()
+                self.updateWindowTitle()
+            }
+        }
+    }
+
+    private func save(_ session: DocumentSession, in owner: NSWindow, afterSave: @escaping () -> Void = {}) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await session.save()
+                self.updateWindowTitle()
+                afterSave()
+            } catch let error as DocumentSessionError {
+                if case .overwriteConfirmationRequired = error {
+                    self.presentOverwriteConfirmation(for: session, in: owner, afterOverwrite: afterSave)
+                } else {
+                    self.presentError(error, for: session.fileURL)
+                }
+            } catch {
+                self.presentError(error, for: session.fileURL)
+            }
+        }
+    }
+
+    private func presentOverwriteConfirmation(for session: DocumentSession, in owner: NSWindow, afterOverwrite: @escaping () -> Void = {}) {
+        let alert = NSAlert()
+        alert.messageText = "Overwrite newer disk version of \(session.fileURL?.lastPathComponent ?? "this document")?"
+        alert.informativeText = "Paperbranch will replace the version changed outside the app with your in-memory edits."
+        alert.addButton(withTitle: "Overwrite")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: owner) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            Task { do { try await session.save(overwritingExternalChanges: true); self.updateWindowTitle(); afterOverwrite() } catch { self.presentError(error, for: session.fileURL) } }
+        }
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard let session = documentSession(for: sender), session.isDirty, !windowsAllowedToClose.contains(sender) else { return true }
         let alert = NSAlert(); alert.messageText = "Save changes to \(session.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
         alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
         alert.beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
-        case .alertFirstButtonReturn: Task { do { try await session.save(); self.windowsAllowedToClose.insert(sender); sender.performClose(nil) } catch { self.presentError(error, for: session.fileURL) } }
+        case .alertFirstButtonReturn: save(session, in: sender) { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) }
         case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); sender.performClose(nil)
         default: break
         } }
@@ -239,6 +309,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func documentSession(for window: NSWindow) -> DocumentSession? {
         if window == self.window { return documentSession }
         return standaloneWindows.values.first(where: { $0.window == window })?.session
+    }
+
+    private func window(for session: DocumentSession) -> NSWindow {
+        if session === documentSession { return window }
+        return standaloneWindows.values.first(where: { $0.session === session })?.window ?? window
     }
 }
 
