@@ -4,6 +4,7 @@ node_modules/
 dist/
 coverage/
 .vite/
+test-results/
 
 .build/
 DerivedData/

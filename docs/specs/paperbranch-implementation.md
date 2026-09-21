@@ -61,6 +61,8 @@ Use a native SwiftUI and AppKit application shell with a WebKit-based Document v
 
 Use Milkdown with its CommonMark and GitHub Flavored Markdown support for the first editor proof. Do not make Milkdown a permanent architecture decision until it passes the Markdown editor test seam described below. If it fails, test TOAST UI Editor inside the same native shell before reconsidering the application architecture.
 
+**Editor proof outcome:** Milkdown alone did not pass the seam: it silently converts front matter and mathematical notation into different supported content on serialize (a heading/thematic break, and a mutated math source), which the required contract forbids. TOAST UI Editor was tested as the required fallback and failed the same check more broadly (it also drops raw HTML outright and corrupts footnote definitions), so it was not a fix. See [`editor-proof/PROOF_REPORT.md`](../../editor-proof/PROOF_REPORT.md) and [ADR 0004](../adr/0004-block-unsafe-markdown-before-the-editor.md). Milkdown is selected, gated by a new editor-admission seam: a document containing front matter or math notation is detected before it reaches Milkdown and blocks formatted editing for that document rather than loading it. With that seam in place, the complete contract passes, and Milkdown is the accepted editor.
+
 The first implementation phase is the editor proof. Application implementation can proceed after the proof shows that the chosen editor preserves the meaning of every supported Markdown construct and supports the required editing actions.
 
 ### Native and editor boundary
@@ -94,6 +96,8 @@ Support CommonMark plus the required GitHub Flavored Markdown constructs: tables
 Resolve relative images against the Markdown document's containing folder. Route image reads through a narrowly scoped native handler that validates the resolved path before returning file data. Do not grant the editor general access to the Library or arbitrary local files.
 
 Raw HTML, front matter, footnotes, mathematical notation, Mermaid diagrams, and plugin-defined Markdown are not supported in the first version. Paperbranch must avoid silently converting an unsupported construct into different supported content. The editor proof must determine whether unsupported source remains intact, becomes visible as plain content, or blocks formatted editing. Record that result before implementation proceeds.
+
+**Recorded result:** raw HTML, footnotes, Mermaid fences, and unrecognized/plugin syntax remain intact through Milkdown's load-serialize round trip (rendered as inert or literal content, never reinterpreted). Front matter and mathematical notation are not safe: Milkdown's parser silently turns them into different supported content, so a native/editor-admission seam (`editor-proof/src/admission.ts`, [ADR 0004](../adr/0004-block-unsafe-markdown-before-the-editor.md)) classifies a document before it reaches the editor and blocks formatted editing entirely for a document containing either construct, instead of loading and risking corrupting it.
 
 ### Saving and dirty state
 
