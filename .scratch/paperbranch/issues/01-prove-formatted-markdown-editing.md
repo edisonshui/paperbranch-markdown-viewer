@@ -15,3 +15,7 @@
 - [ ] The proof records how raw HTML, front matter, footnotes, mathematical notation, Mermaid diagrams, and unknown syntax behave, and no case silently becomes different supported content.
 - [ ] One repeatable test command runs the complete editor contract and reports individual fixture failures.
 - [ ] Milkdown is accepted only if every required check passes. If it fails, the same contract runs against TOAST UI Editor and records the selected editor.
+- [ ] The proof runs inside a minimal macOS `WKWebView` host, not only in a normal browser.
+- [ ] With focus inside the editor, `Command-S` reaches the native host and requests the current serialized Markdown without writing a file automatically.
+- [ ] Simulated external-content messages replace clean editor content and preserve dirty editor content for later conflict handling.
+- [ ] The native/editor bridge exposes only the document information needed for editing, saving, safe reloads, and conflict notifications. JavaScript receives no unrestricted file-system access.
