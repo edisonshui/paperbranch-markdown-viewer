@@ -27,6 +27,87 @@ import XCTest
 /// Run with `native-host/test.sh`, which starts the same Vite dev server
 /// the Playwright suite uses before running `swift test`.
 final class BridgeCoordinatorTests: XCTestCase {
+    func testChoosingNestedLibraryBuildsVisibleMarkdownHierarchy() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+
+        try "# Root\n".write(to: libraryURL.appendingPathComponent("Readme.MD"), atomically: true, encoding: .utf8)
+        let essays = libraryURL.appendingPathComponent("Essays", isDirectory: true)
+        try FileManager.default.createDirectory(at: essays, withIntermediateDirectories: true)
+        try "# Autumn\n".write(to: essays.appendingPathComponent("Autumn.markdown"), atomically: true, encoding: .utf8)
+        try "not markdown".write(to: essays.appendingPathComponent("draft.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: libraryURL.appendingPathComponent("Empty", isDirectory: true), withIntermediateDirectories: true)
+
+        let library = try LibraryBrowser.choose(libraryURL)
+
+        XCTAssertEqual(library.root.name, libraryURL.lastPathComponent)
+        XCTAssertEqual(library.root.children.map(\.name), ["Essays", "Readme.MD"])
+        XCTAssertEqual(library.root.children[0].children.map(\.name), ["Autumn.markdown"])
+        XCTAssertFalse(library.root.flattened().contains { $0.name == "draft.txt" })
+        XCTAssertFalse(library.root.flattened().contains { $0.name == "Empty" })
+    }
+
+    func testLibrarySidebarStateTracksFolderAndWholeSidebarCollapse() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-sidebar")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let folder = libraryURL.appendingPathComponent("Essays", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try "# Essay\n".write(to: folder.appendingPathComponent("one.md"), atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let essays = try XCTUnwrap(library.root.children.first)
+
+        var sidebar = LibrarySidebarState()
+        XCTAssertTrue(sidebar.isExpanded(essays))
+        sidebar.toggleFolder(essays)
+        XCTAssertFalse(sidebar.isExpanded(essays))
+        XCTAssertFalse(sidebar.isCollapsed)
+        sidebar.toggleCollapsed()
+        XCTAssertTrue(sidebar.isCollapsed)
+        sidebar.toggleCollapsed()
+        XCTAssertFalse(sidebar.isCollapsed)
+    }
+
+    @MainActor
+    func testLibraryWorkflowSelectsNestedDocumentsWithoutWritingOnSwitch() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library-workflow")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let essays = libraryURL.appendingPathComponent("Essays", isDirectory: true)
+        try FileManager.default.createDirectory(at: essays, withIntermediateDirectories: true)
+        let firstURL = essays.appendingPathComponent("first.MD")
+        let secondURL = libraryURL.appendingPathComponent("second.markdown")
+        let firstOriginal = "# First Library Document\n"
+        let secondOriginal = "# Second Library Document\n"
+        try firstOriginal.write(to: firstURL, atomically: true, encoding: .utf8)
+        try secondOriginal.write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let library = try LibraryBrowser.choose(libraryURL)
+        XCTAssertEqual(library.root.children.map(\.name), ["Essays", "second.markdown"])
+        XCTAssertEqual(library.root.children[0].children.map(\.url), [firstURL.standardizedFileURL])
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(firstURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+
+        // Selecting another Library document replaces the formatted Document
+        // view in memory. It cannot save the dirty first document or touch
+        // the selected second document without an explicit Command-S path.
+        try await session.open(secondURL)
+        XCTAssertEqual(try String(contentsOf: firstURL, encoding: .utf8), firstOriginal)
+        XCTAssertEqual(try String(contentsOf: secondURL, encoding: .utf8), secondOriginal)
+        let selectedDocument = try await coordinator.requestSave()
+        XCTAssertTrue(selectedDocument.contains("Second Library Document"))
+
+        var sidebar = LibrarySidebarState()
+        sidebar.toggleCollapsed()
+        XCTAssertTrue(sidebar.isCollapsed)
+        sidebar.toggleCollapsed()
+        XCTAssertFalse(sidebar.isCollapsed)
+    }
+
     @MainActor
     private func makeCoordinator() -> BridgeCoordinator {
         let coordinator = BridgeCoordinator()
@@ -326,6 +407,13 @@ final class BridgeCoordinatorTests: XCTestCase {
             .deletingLastPathComponent()  // Tests
             .deletingLastPathComponent()  // native-host
         return try FileManager.default.contentsOfDirectory(atPath: editorProofDirectory.path).sorted()
+    }
+
+    private func makeTemporaryDirectory(named name: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(name)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     private func XCTAssertThrowsErrorAsync(
