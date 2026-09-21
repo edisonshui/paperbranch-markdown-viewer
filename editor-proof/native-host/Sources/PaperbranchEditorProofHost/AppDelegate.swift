@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private var window: NSWindow!
     private var documentSession: DocumentSession!
     private let sidebarController = LibrarySidebarViewController()
-    private let documentController = NSViewController()
+    private var documentController: DocumentPresentationViewController!
     private let splitController = NSSplitViewController()
     private let libraryWorkflow = LibraryWorkflow()
     private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
@@ -21,12 +21,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
         documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
+        documentSession.availabilityDidChange = { [weak self] availability in
+            self?.documentController.show(availability: availability)
+            self?.updateWindowTitle()
+        }
         documentSession.navigationStateDidChange = { [weak self] outline, progress in self?.sidebarController.showDocumentNavigation(outline: outline, progress: progress) }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
         sidebarController.selectOutline = { [weak self] id in self?.selectOutline(id) }
-        documentController.view = coordinator.webView
+        documentController = DocumentPresentationViewController(webView: coordinator.webView)
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
 
@@ -149,6 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func openStandaloneDocument(at url: URL) async throws {
         let standalone = StandaloneDocumentWindow(delegate: self)
         standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
+        standalone.session.availabilityDidChange = { [weak standalone] availability in
+            standalone?.presentation.show(availability: availability)
+            standalone?.updateTitle()
+        }
         try await standalone.session.open(url)
         standalone.updateTitle()
         standalone.window.makeKeyAndOrderFront(nil)
@@ -204,7 +212,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             return
         }
         guard let url = documentSession.fileURL else { window.title = "Paperbranch"; window.isDocumentEdited = false; return }
-        window.title = url.lastPathComponent; window.isDocumentEdited = documentSession.isDirty
+        window.title = documentSession.availability == .available ? url.lastPathComponent : "\(url.lastPathComponent) (Unavailable)"
+        window.isDocumentEdited = documentSession.isDirty
     }
 
     private var activeDocumentSession: DocumentSession? {

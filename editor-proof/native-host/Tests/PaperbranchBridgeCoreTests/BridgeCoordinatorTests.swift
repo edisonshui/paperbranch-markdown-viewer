@@ -445,6 +445,133 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testCleanDocumentReloadsAfterAnotherProgramModifiesItsRealFile() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-external-modification")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("observed.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: false, encoding: .utf8)
+
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Changed outside Paperbranch")
+        XCTAssertTrue(reloaded)
+        XCTAssertEqual(session.fileURL, documentURL.standardizedFileURL)
+        XCTAssertFalse(session.isDirty)
+    }
+
+    @MainActor
+    func testCleanDocumentReloadsAfterAtomicReplacement() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-atomic-replacement")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("observed.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+
+        try "# Atomically replaced\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Atomically replaced")
+        XCTAssertTrue(reloaded)
+        XCTAssertEqual(session.fileURL, documentURL.standardizedFileURL)
+    }
+
+    @MainActor
+    func testPaperbranchCompletedSaveDoesNotReloadItsOwnContent() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-own-save")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("saved.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+
+        try await session.save()
+        let saved = try await coordinator.requestSave()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let current = try await coordinator.requestSave()
+
+        XCTAssertEqual(current, saved)
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), saved)
+        XCTAssertFalse(session.isDirty)
+    }
+
+    @MainActor
+    func testCleanDocumentShowsUnavailableStateAfterMovement() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-moved-document")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("moved.md")
+        let movedURL = directory.appendingPathComponent("moved elsewhere.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try FileManager.default.moveItem(at: documentURL, to: movedURL)
+
+        let becameUnavailable = await pollAvailability(of: session, expecting: .unavailable)
+        let editorContent = try await coordinator.requestSave()
+        XCTAssertTrue(becameUnavailable)
+        XCTAssertTrue(editorContent.contains("Original"))
+    }
+
+    @MainActor
+    func testCleanDocumentShowsUnavailableStateAfterDeletion() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-deleted-document")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("deleted.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try FileManager.default.removeItem(at: documentURL)
+
+        let becameUnavailable = await pollAvailability(of: session, expecting: .unavailable)
+        let editorContent = try await coordinator.requestSave()
+        XCTAssertTrue(becameUnavailable)
+        XCTAssertTrue(editorContent.contains("Original"))
+    }
+
+    @MainActor
+    func testDirtyDocumentPreservesEditsAfterExternalModification() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-dirty-external-change")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("dirty.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let dirtyContent = try await coordinator.requestSave()
+
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: false, encoding: .utf8)
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let current = try await coordinator.requestSave()
+        XCTAssertEqual(current, dirtyContent)
+        XCTAssertTrue(session.isDirty)
+    }
+
+    @MainActor
     func testExternalReplacePreservesDirtyContent() async throws {
         let coordinator = makeCoordinator()
         try await waitForHarnessReady(coordinator)
@@ -553,6 +680,34 @@ final class BridgeCoordinatorTests: XCTestCase {
             try await Task.sleep(nanoseconds: intervalNanoseconds)
         }
         return last
+    }
+
+    @MainActor
+    private func pollMarkdown(
+        in coordinator: BridgeCoordinator,
+        containing expected: String,
+        attempts: Int = 40,
+        intervalNanoseconds: UInt64 = 50_000_000
+    ) async throws -> Bool {
+        for _ in 0..<attempts {
+            if try await coordinator.requestSave().contains(expected) { return true }
+            try await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+        return false
+    }
+
+    @MainActor
+    private func pollAvailability(
+        of session: DocumentSession,
+        expecting expected: DocumentAvailability,
+        attempts: Int = 40,
+        intervalNanoseconds: UInt64 = 50_000_000
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if session.availability == expected { return true }
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+        return false
     }
 
     @MainActor

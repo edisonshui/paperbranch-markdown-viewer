@@ -5,13 +5,13 @@ import PaperbranchBridgeCore
 final class StandaloneDocumentWindow {
     let coordinator: BridgeCoordinator
     let session: DocumentSession
+    let presentation: DocumentPresentationViewController
     let window: NSWindow
 
     init(delegate: NSWindowDelegate) {
         coordinator = BridgeCoordinator()
         session = DocumentSession(coordinator: coordinator)
-        let documentController = NSViewController()
-        documentController.view = coordinator.webView
+        presentation = DocumentPresentationViewController(webView: coordinator.webView)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -19,7 +19,7 @@ final class StandaloneDocumentWindow {
             defer: false
         )
         window.delegate = delegate
-        window.contentViewController = documentController
+        window.contentViewController = presentation
         coordinator.load(url: HarnessLocation.url)
     }
 
@@ -29,7 +29,7 @@ final class StandaloneDocumentWindow {
             window.isDocumentEdited = false
             return
         }
-        window.title = url.lastPathComponent
+        window.title = session.availability == .available ? url.lastPathComponent : "\(url.lastPathComponent) (Unavailable)"
         window.isDocumentEdited = session.isDirty
     }
 }

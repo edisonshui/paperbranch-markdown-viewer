@@ -14,6 +14,11 @@ public enum DocumentSessionError: LocalizedError {
     }
 }
 
+public enum DocumentAvailability: Equatable {
+    case available
+    case unavailable
+}
+
 /// Native ownership for one open Markdown document. It is intentionally
 /// responsible for paths and writes, leaving the web editor only content and
 /// dirty-state messages.
@@ -22,9 +27,13 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public let coordinator: BridgeCoordinator
     public private(set) var fileURL: URL?
     public private(set) var isDirty = false
+    public private(set) var availability: DocumentAvailability = .available
     public private(set) var lastError: Error?
     public var dirtyStateDidChange: ((Bool) -> Void)?
+    public var availabilityDidChange: ((DocumentAvailability) -> Void)?
     public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
+    private var lastDiskMarkdown: String?
+    private var fileChangeMonitor: FileChangeMonitor?
 
     public init(coordinator: BridgeCoordinator) {
         self.coordinator = coordinator
@@ -38,13 +47,22 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
 
     public func open(_ url: URL) async throws {
         guard Self.accepts(url) else { throw DocumentSessionError.unsupportedFile(url) }
-        let markdown = try String(contentsOf: url, encoding: .utf8)
+        let documentURL = url.standardizedFileURL
+        let markdown = try String(contentsOf: documentURL, encoding: .utf8)
         try await coordinator.waitForNativeBridge()
-        coordinator.authorizeImages(for: url)
+        coordinator.authorizeImages(for: documentURL)
         try await coordinator.loadDocument(markdown: markdown)
-        fileURL = url.standardizedFileURL
+        fileChangeMonitor?.cancel()
+        fileURL = documentURL
+        lastDiskMarkdown = markdown
         isDirty = false
+        setAvailability(.available)
         lastError = nil
+        fileChangeMonitor = FileChangeMonitor(documentURL: documentURL) { [weak self] in
+            Task { @MainActor [weak self] in
+                await self?.reconcileFileSystemSignal()
+            }
+        }
     }
 
     /// Serializes and writes only for an explicit native save command. A
@@ -55,6 +73,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
             let markdown = try await coordinator.requestSave()
             try coordinatedWrite(markdown, to: fileURL)
             try await coordinator.saveSucceeded(markdown: markdown)
+            lastDiskMarkdown = markdown
             isDirty = false
             lastError = nil
         } catch {
@@ -76,6 +95,38 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         }
         if let coordinationError { throw coordinationError }
         if let writeError { throw writeError }
+    }
+
+    /// File-system events are only hints. This re-reads the known document
+    /// path and compares real bytes with the session's completed disk version
+    /// before it changes the editor.
+    private func reconcileFileSystemSignal() async {
+        guard let fileURL, let lastDiskMarkdown else { return }
+        do {
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                if !isDirty { setAvailability(.unavailable) }
+                return
+            }
+            let diskMarkdown = try String(contentsOf: fileURL, encoding: .utf8)
+            guard diskMarkdown != lastDiskMarkdown else {
+                setAvailability(.available)
+                return
+            }
+            // Ticket 09 owns the conflict state. Ticket 08 must leave a
+            // dirty editor entirely untouched, including its disk baseline.
+            guard !isDirty else { return }
+            guard try await coordinator.externalReplace(markdown: diskMarkdown) else { return }
+            self.lastDiskMarkdown = diskMarkdown
+            setAvailability(.available)
+        } catch {
+            if !isDirty { setAvailability(.unavailable) }
+        }
+    }
+
+    private func setAvailability(_ availability: DocumentAvailability) {
+        guard self.availability != availability else { return }
+        self.availability = availability
+        availabilityDidChange?(availability)
     }
 
     public func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator) {}
