@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     private var window: NSWindow!
     private var documentSession: DocumentSession!
-    private var allowClosingDirtyWindow = false
     private let sidebarController = LibrarySidebarViewController()
     private let documentController = NSViewController()
     private let splitController = NSSplitViewController()
     private let libraryWorkflow = LibraryWorkflow()
+    private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
+    private var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
+    private var windowsAllowedToClose: Set<NSWindow> = []
+    private var pendingFinderURLs: [URL] = []
+    private var isApplicationReady = false
     private var libraryRefreshTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         documentSession = DocumentSession(coordinator: coordinator)
         documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
-        sidebarController.selectDocument = { [weak self] url in self?.openDocument(at: url) }
+        sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
         documentController.view = coordinator.webView
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
@@ -37,12 +41,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         installMenu()
         coordinator.load(url: HarnessLocation.url)
         restoreLibrary()
+        isApplicationReady = true
+        if !pendingFinderURLs.isEmpty {
+            let urls = pendingFinderURLs
+            pendingFinderURLs = []
+            routeFinderOpen(urls)
+        }
         libraryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshLibraryIfNeeded() }
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        routeFinderOpen([URL(fileURLWithPath: filename)])
+        return true
+    }
+
+    func application(_ application: NSApplication, openFiles filenames: [String]) {
+        routeFinderOpen(filenames.map(URL.init(fileURLWithPath:)))
+    }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
@@ -94,20 +113,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "markdown")!]
         panel.allowsMultipleSelection = false; panel.canChooseDirectories = false
-        panel.beginSheetModal(for: window) { [weak self] response in guard response == .OK, let url = panel.url else { return }; self?.openDocument(at: url) }
+        panel.beginSheetModal(for: window) { [weak self] response in guard response == .OK, let url = panel.url else { return }; self?.routeFinderOpen([url]) }
     }
 
-    private func openDocument(at url: URL) {
+    private func routeFinderOpen(_ urls: [URL]) {
+        guard isApplicationReady else { pendingFinderURLs.append(contentsOf: urls); return }
         Task { [weak self] in guard let self else { return }; do {
-            try await documentSession.open(url)
-            libraryWorkflow.selectDocument(at: url)
-            sidebarController.select(url: url)
-            updateWindowTitle()
-        } catch { presentError(error, for: url) } }
+            let results = try await finderOpenWorkflow.applicationDidReceiveFinderOpen(urls)
+            for result in results {
+                switch result {
+                case let .opened(state):
+                    if state.kind == .library { try await openLibraryDocument(at: state.documentURL) }
+                    else { try await openStandaloneDocument(at: state.documentURL) }
+                case let .focused(state):
+                    if state.kind == .library { window.makeKeyAndOrderFront(nil) }
+                    else { standaloneWindows[state.documentURL]?.window.makeKeyAndOrderFront(nil) }
+                }
+            }
+        } catch { presentError(error, for: urls.first) } }
+    }
+
+    private func openLibraryDocument(at url: URL) async throws {
+        try await documentSession.open(url)
+        sidebarController.select(url: url)
+        updateWindowTitle()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func openStandaloneDocument(at url: URL) async throws {
+        let standalone = StandaloneDocumentWindow(delegate: self)
+        standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
+        try await standalone.session.open(url)
+        standalone.updateTitle()
+        standalone.window.makeKeyAndOrderFront(nil)
+        standaloneWindows[url.standardizedFileURL] = standalone
     }
 
     @objc private func handleSave() {
-        Task { [weak self] in guard let self, documentSession.fileURL != nil else { return }; do { try await documentSession.save(); updateWindowTitle() } catch { presentError(error, for: documentSession.fileURL) } }
+        let session = activeDocumentSession
+        Task { [weak self] in guard let self, let session, session.fileURL != nil else { return }; do { try await session.save(); updateWindowTitle() } catch { presentError(error, for: session.fileURL) } }
     }
 
     @objc private func toggleLibrarySidebar() {
@@ -120,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             switch try libraryWorkflow.restoreLibrary() {
             case .restored:
                 showLibrary()
-                if let selected = libraryWorkflow.selectedDocumentURL { openDocument(at: selected) }
+                if let selected = libraryWorkflow.selectedDocumentURL { routeFinderOpen([selected]) }
             case .unavailable:
                 sidebarController.showUnavailableLibrary()
             }
@@ -149,8 +193,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 
     private func updateWindowTitle() {
+        if let standalone = standaloneWindows.values.first(where: { $0.window == NSApp.keyWindow }) {
+            standalone.updateTitle()
+            return
+        }
         guard let url = documentSession.fileURL else { window.title = "Paperbranch"; window.isDocumentEdited = false; return }
         window.title = url.lastPathComponent; window.isDocumentEdited = documentSession.isDirty
+    }
+
+    private var activeDocumentSession: DocumentSession? {
+        if let standalone = standaloneWindows.values.first(where: { $0.window == NSApp.keyWindow }) { return standalone.session }
+        return documentSession
     }
 
     private func presentError(_ error: Error, for url: URL?) {
@@ -158,15 +211,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard documentSession.isDirty, !allowClosingDirtyWindow else { return true }
-        let alert = NSAlert(); alert.messageText = "Save changes to \(documentSession.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
+        guard let session = documentSession(for: sender), session.isDirty, !windowsAllowedToClose.contains(sender) else { return true }
+        let alert = NSAlert(); alert.messageText = "Save changes to \(session.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
         alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
         alert.beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
-        case .alertFirstButtonReturn: Task { do { try await self.documentSession.save(); self.allowClosingDirtyWindow = true; sender.performClose(nil) } catch { self.presentError(error, for: self.documentSession.fileURL) } }
-        case .alertThirdButtonReturn: allowClosingDirtyWindow = true; sender.performClose(nil)
+        case .alertFirstButtonReturn: Task { do { try await session.save(); self.windowsAllowedToClose.insert(sender); sender.performClose(nil) } catch { self.presentError(error, for: session.fileURL) } }
+        case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); sender.performClose(nil)
         default: break
         } }
         return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow,
+              let entry = standaloneWindows.first(where: { $0.value.window == closedWindow }) else { return }
+        finderOpenWorkflow.documentWindowDidClose(for: entry.key)
+        standaloneWindows[entry.key] = nil
+        windowsAllowedToClose.remove(closedWindow)
+    }
+
+    private func documentSession(for window: NSWindow) -> DocumentSession? {
+        if window == self.window { return documentSession }
+        return standaloneWindows.values.first(where: { $0.window == window })?.session
     }
 }
 

@@ -19,4 +19,10 @@ for _ in $(seq 1 50); do
 done
 
 cd "$SCRIPT_DIR"
-swift run
+swift build
+APP_PATH="$SCRIPT_DIR/.build/Paperbranch.app"
+rm -rf "$APP_PATH"
+mkdir -p "$APP_PATH/Contents/MacOS"
+cp Info.plist "$APP_PATH/Contents/Info.plist"
+cp .build/debug/PaperbranchEditorProofHost "$APP_PATH/Contents/MacOS/PaperbranchEditorProofHost"
+open -W "$APP_PATH"

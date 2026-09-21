@@ -27,6 +27,21 @@ import XCTest
 /// Run with `native-host/test.sh`, which starts the same Vite dev server
 /// the Playwright suite uses before running `swift test`.
 final class BridgeCoordinatorTests: XCTestCase {
+    func testApplicationBundleRegistersMarkdownEditorDocumentTypes() throws {
+        let plistURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let plist = try XCTUnwrap(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let documentTypes = try XCTUnwrap(plist["CFBundleDocumentTypes"] as? [[String: Any]])
+        let markdownExtensions = Set(documentTypes.flatMap { $0["CFBundleTypeExtensions"] as? [String] ?? [] })
+
+        XCTAssertEqual(markdownExtensions, ["md", "markdown"])
+        XCTAssertEqual(documentTypes.first?["CFBundleTypeRole"] as? String, "Editor")
+    }
+
     func testChoosingNestedLibraryBuildsVisibleMarkdownHierarchy() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
@@ -91,6 +106,79 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(restoredLaunch.selectedDocumentURL, selected.standardizedFileURL)
         XCTAssertEqual(restoredLaunch.library?.root.children.first?.children.map(\.name), ["added.markdown", "selected.md"])
         XCTAssertFalse(restoredLaunch.sidebarState.isExpanded(try XCTUnwrap(restoredLaunch.library?.root.children.first)))
+    }
+
+    @MainActor
+    func testStoppedApplicationRoutesFinderOpenedLibraryDocumentToLibraryWindow() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-finder-library")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("From Finder.MD")
+        try "# From Finder\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let library = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        try library.chooseLibrary(at: libraryURL)
+        let application = FinderOpenWorkflow(libraryWorkflow: library) {
+            DocumentSession(coordinator: self.makeCoordinator())
+        }
+
+        try await application.applicationDidReceiveFinderOpen([documentURL])
+
+        XCTAssertEqual(library.selectedDocumentURL, documentURL.standardizedFileURL)
+        XCTAssertEqual(application.openWindows, [DocumentWindowState(documentURL: documentURL, kind: .library)])
+        XCTAssertEqual(application.focusedDocumentURL, documentURL.standardizedFileURL)
+    }
+
+    @MainActor
+    func testRunningApplicationOpensAndSavesSeparateFinderStandaloneDocuments() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-finder-standalone-library")
+        let outsideURL = try makeTemporaryDirectory(named: "paperbranch-finder-outside")
+        defer {
+            try? FileManager.default.removeItem(at: libraryURL)
+            try? FileManager.default.removeItem(at: outsideURL)
+        }
+        let firstURL = outsideURL.appendingPathComponent("first.md")
+        let secondURL = outsideURL.appendingPathComponent("second.markdown")
+        let firstOriginal = "# First Standalone\n"
+        try firstOriginal.write(to: firstURL, atomically: true, encoding: .utf8)
+        try "# Second Standalone\n".write(to: secondURL, atomically: true, encoding: .utf8)
+
+        let library = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        try library.chooseLibrary(at: libraryURL)
+        var coordinators: [BridgeCoordinator] = []
+        let application = FinderOpenWorkflow(libraryWorkflow: library) {
+            let coordinator = self.makeCoordinator()
+            coordinators.append(coordinator)
+            return DocumentSession(coordinator: coordinator)
+        }
+
+        try await application.applicationDidReceiveFinderOpen([firstURL])
+        try await application.applicationDidReceiveFinderOpen([secondURL])
+        let firstSession = try XCTUnwrap(application.documentSession(for: firstURL))
+        let secondSession = try XCTUnwrap(application.documentSession(for: secondURL))
+        XCTAssertFalse(firstSession === secondSession)
+        XCTAssertEqual(library.selectedDocumentURL, nil)
+        XCTAssertEqual(application.openWindows, [
+            DocumentWindowState(documentURL: firstURL, kind: .standalone),
+            DocumentWindowState(documentURL: secondURL, kind: .standalone),
+        ])
+
+        try await insertExclamationMark(in: coordinators[0])
+        let becameDirty = try await pollIsDirty(coordinators[0], expecting: true)
+        XCTAssertTrue(becameDirty)
+        XCTAssertEqual(try String(contentsOf: firstURL, encoding: .utf8), firstOriginal)
+        try await firstSession.save()
+        XCTAssertTrue(try String(contentsOf: firstURL, encoding: .utf8).contains("First Standalone!"))
+        XCTAssertFalse(firstSession.isDirty)
+
+        try await application.applicationDidReceiveFinderOpen([firstURL])
+        XCTAssertTrue(try XCTUnwrap(application.documentSession(for: firstURL)) === firstSession)
+        XCTAssertEqual(application.openWindows.count, 2)
+        XCTAssertEqual(application.focusedDocumentURL, firstURL.standardizedFileURL)
+
+        application.documentWindowDidClose(for: firstURL)
+        try await application.applicationDidReceiveFinderOpen([firstURL])
+        XCTAssertFalse(try XCTUnwrap(application.documentSession(for: firstURL)) === firstSession)
+        XCTAssertEqual(application.openWindows.count, 2)
     }
 
     func testSecurityScopedBookmarkPersistsAndRestoresLibrary() throws {
