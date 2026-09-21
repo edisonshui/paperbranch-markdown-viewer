@@ -20,4 +20,4 @@ for _ in $(seq 1 50); do
 done
 
 cd "$SCRIPT_DIR"
-swift test
+PAPERBRANCH_PROOF_HARNESS_URL="http://localhost:5183/" swift test

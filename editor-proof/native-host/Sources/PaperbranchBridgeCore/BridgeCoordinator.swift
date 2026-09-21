@@ -55,6 +55,7 @@ public final class BridgeCoordinator: NSObject {
         let configuration = configuration ?? WKWebViewConfiguration()
         localImageSchemeHandler = LocalImageSchemeHandler()
         configuration.setURLSchemeHandler(localImageSchemeHandler, forURLScheme: LocalImageSchemeHandler.scheme)
+        configuration.setURLSchemeHandler(OfflineEditorSchemeHandler(), forURLScheme: HarnessLocation.offlineScheme)
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)

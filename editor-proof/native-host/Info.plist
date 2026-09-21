@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>PaperbranchEditorProofHost</string>
+    <string>${EXECUTABLE_NAME}</string>
     <key>CFBundleIdentifier</key>
     <string>com.paperbranch.app</string>
     <key>CFBundleName</key>

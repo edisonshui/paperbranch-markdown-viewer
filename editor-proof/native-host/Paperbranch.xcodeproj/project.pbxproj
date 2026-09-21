@@ -1,0 +1,80 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+		A00000000000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* AppDelegate.swift */; };
+		A00000000000000000000002 /* DocumentPresentationViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000102 /* DocumentPresentationViewController.swift */; };
+		A00000000000000000000003 /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* Entry.swift */; };
+		A00000000000000000000004 /* LibrarySidebarViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* LibrarySidebarViewController.swift */; };
+		A00000000000000000000005 /* StandaloneDocumentWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* StandaloneDocumentWindow.swift */; };
+		A00000000000000000000006 /* BridgeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000201 /* BridgeCoordinator.swift */; };
+		A00000000000000000000007 /* DocumentSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000202 /* DocumentSession.swift */; };
+		A00000000000000000000008 /* FileChangeMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000203 /* FileChangeMonitor.swift */; };
+		A00000000000000000000009 /* FinderOpenWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000204 /* FinderOpenWorkflow.swift */; };
+		A00000000000000000000010 /* HarnessLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000205 /* HarnessLocation.swift */; };
+		A00000000000000000000011 /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000206 /* LibraryBrowser.swift */; };
+		A00000000000000000000012 /* LibraryWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000207 /* LibraryWorkflow.swift */; };
+		A00000000000000000000013 /* LocalImageResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000208 /* LocalImageResolver.swift */; };
+		A00000000000000000000014 /* LocalImageSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000209 /* LocalImageSchemeHandler.swift */; };
+		A00000000000000000000020 /* OfflineEditorSchemeHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000210 /* OfflineEditorSchemeHandler.swift */; };
+		A00000000000000000000015 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000301 /* AppKit.framework */; };
+		A00000000000000000000016 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000302 /* WebKit.framework */; };
+		A00000000000000000000017 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000303 /* UniformTypeIdentifiers.framework */; };
+		A00000000000000000000018 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000304 /* Security.framework */; };
+		A00000000000000000000019 /* PaperbranchBridgeCore in Frameworks */ = {isa = PBXBuildFile; fileRef = A00000000000000000000402 /* libPaperbranchBridgeCore.a */; };
+
+		A00000000000000000000101 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		A00000000000000000000102 /* DocumentPresentationViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPresentationViewController.swift; sourceTree = "<group>"; };
+		A00000000000000000000103 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
+		A00000000000000000000104 /* LibrarySidebarViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySidebarViewController.swift; sourceTree = "<group>"; };
+		A00000000000000000000105 /* StandaloneDocumentWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandaloneDocumentWindow.swift; sourceTree = "<group>"; };
+		A00000000000000000000201 /* BridgeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeCoordinator.swift; sourceTree = "<group>"; };
+		A00000000000000000000202 /* DocumentSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentSession.swift; sourceTree = "<group>"; };
+		A00000000000000000000203 /* FileChangeMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileChangeMonitor.swift; sourceTree = "<group>"; };
+		A00000000000000000000204 /* FinderOpenWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderOpenWorkflow.swift; sourceTree = "<group>"; };
+		A00000000000000000000205 /* HarnessLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessLocation.swift; sourceTree = "<group>"; };
+		A00000000000000000000206 /* LibraryBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryBrowser.swift; sourceTree = "<group>"; };
+		A00000000000000000000207 /* LibraryWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryWorkflow.swift; sourceTree = "<group>"; };
+		A00000000000000000000208 /* LocalImageResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalImageResolver.swift; sourceTree = "<group>"; };
+		A00000000000000000000209 /* LocalImageSchemeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalImageSchemeHandler.swift; sourceTree = "<group>"; };
+		A00000000000000000000210 /* OfflineEditorSchemeHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineEditorSchemeHandler.swift; sourceTree = "<group>"; };
+		A00000000000000000000301 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		A00000000000000000000302 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		A00000000000000000000303 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
+		A00000000000000000000304 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		A00000000000000000000401 /* Paperbranch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = Paperbranch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000402 /* libPaperbranchBridgeCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libPaperbranchBridgeCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		A00000000000000000000501 = {isa = PBXGroup; children = (A00000000000000000000502 /* App */, A00000000000000000000503 /* Core */, A00000000000000000000504 /* Frameworks */, A00000000000000000000505 /* Products */); sourceTree = "<group>"; };
+		A00000000000000000000502 /* App */ = {isa = PBXGroup; children = (A00000000000000000000101, A00000000000000000000102, A00000000000000000000103, A00000000000000000000104, A00000000000000000000105,); name = App; path = Sources/PaperbranchEditorProofHost; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000503 /* Core */ = {isa = PBXGroup; children = (A00000000000000000000201, A00000000000000000000202, A00000000000000000000203, A00000000000000000000204, A00000000000000000000205, A00000000000000000000206, A00000000000000000000207, A00000000000000000000208, A00000000000000000000209, A00000000000000000000210,); name = Core; path = Sources/PaperbranchBridgeCore; sourceTree = SOURCE_ROOT; };
+		A00000000000000000000504 /* Frameworks */ = {isa = PBXGroup; children = (A00000000000000000000301, A00000000000000000000302, A00000000000000000000303, A00000000000000000000304,); name = Frameworks; sourceTree = "<group>"; };
+		A00000000000000000000505 /* Products */ = {isa = PBXGroup; children = (A00000000000000000000401, A00000000000000000000402,); name = Products; sourceTree = "<group>"; };
+
+		A00000000000000000000601 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000015, A00000000000000000000016, A00000000000000000000017, A00000000000000000000019,); runOnlyForDeploymentPostprocessing = 0; };
+		A00000000000000000000602 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A00000000000000000000004, A00000000000000000000005,); runOnlyForDeploymentPostprocessing = 0; };
+		A00000000000000000000603 /* Bundle offline editor */ = {isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); inputPaths = (); name = "Bundle offline editor"; outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Web/index.html",); runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "\"$SRCROOT/build-web-harness.sh\" \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Web\"\n"; };
+		A00000000000000000000604 /* Core Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000015, A00000000000000000000016, A00000000000000000000017, A00000000000000000000018,); runOnlyForDeploymentPostprocessing = 0; };
+		A00000000000000000000605 /* Core Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A00000000000000000000009, A00000000000000000000010, A00000000000000000000011, A00000000000000000000012, A00000000000000000000013, A00000000000000000000014, A00000000000000000000020,); runOnlyForDeploymentPostprocessing = 0; };
+
+		A00000000000000000000701 /* Paperbranch */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000801; buildPhases = (A00000000000000000000602, A00000000000000000000601, A00000000000000000000603,); buildRules = (); dependencies = (A00000000000000000000901,); name = Paperbranch; productName = Paperbranch; productReference = A00000000000000000000401; productType = "com.apple.product-type.application"; };
+		A00000000000000000000702 /* PaperbranchBridgeCore */ = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000802; buildPhases = (A00000000000000000000605, A00000000000000000000604,); buildRules = (); dependencies = (); name = PaperbranchBridgeCore; productName = PaperbranchBridgeCore; productReference = A00000000000000000000402; productType = "com.apple.product-type.library.static"; };
+		A00000000000000000000901 = {isa = PBXTargetDependency; target = A00000000000000000000702; };
+
+		A00000000000000000000801 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000811, A00000000000000000000812,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000000000000000000802 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000813, A00000000000000000000814,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000000000000000000803 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000815, A00000000000000000000816,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A00000000000000000000811 = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; INFOPLIST_FILE = Info.plist; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_BUNDLE_IDENTIFIER = com.paperbranch.app; PRODUCT_NAME = Paperbranch; SWIFT_VERSION = 5.10; }; name = Debug; };
+		A00000000000000000000812 = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; INFOPLIST_FILE = Info.plist; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_BUNDLE_IDENTIFIER = com.paperbranch.app; PRODUCT_NAME = Paperbranch; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 5.10; }; name = Release; };
+		A00000000000000000000813 = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_NAME = PaperbranchBridgeCore; SWIFT_VERSION = 5.10; }; name = Debug; };
+		A00000000000000000000814 = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGNING_ALLOWED = NO; MACOSX_DEPLOYMENT_TARGET = 13.0; PRODUCT_NAME = PaperbranchBridgeCore; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 5.10; }; name = Release; };
+		A00000000000000000000815 = {isa = XCBuildConfiguration; buildSettings = { MACOSX_DEPLOYMENT_TARGET = 13.0; }; name = Debug; };
+		A00000000000000000000816 = {isa = XCBuildConfiguration; buildSettings = { MACOSX_DEPLOYMENT_TARGET = 13.0; }; name = Release; };
+
+		A00000000000000000001001 /* Project object */ = {isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 2700; }; buildConfigurationList = A00000000000000000000803; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; mainGroup = A00000000000000000000501; productRefGroup = A00000000000000000000505; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000701, A00000000000000000000702,); };
+	};
+	rootObject = A00000000000000000001001 /* Project object */;
+}
