@@ -1,0 +1,3 @@
+# Edit formatted Markdown directly
+
+Paperbranch will use the Document view for both reading and editing. The user will edit formatted content directly instead of switching to raw Markdown source or using a split source-and-preview layout, because editing should preserve the Reader design as the main experience. Paperbranch will preserve the document's meaning but may standardize whitespace, list markers, and equivalent Markdown syntax when saving. The first version will support headings, emphasis, lists, links, images, block quotes, fenced code blocks, tables, task lists, and strikethrough. Paperbranch will write changes back to the original Markdown document only when the user presses `Command-S`.
