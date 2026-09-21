@@ -1,27 +1,17 @@
 import AppKit
 import PaperbranchBridgeCore
+import UniformTypeIdentifiers
 
-/// Minimal proof host: one window, one WKWebView loading the editor-proof
-/// harness, and a Save menu item bound to Command-S. It owns no file
-/// access whatsoever -- it only logs what `BridgeCoordinator.requestSave()`
-/// returns. Building real file I/O, Library browsing, or persistence is
-/// out of scope for Ticket 01.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let sampleMarkdown = """
-        # Paperbranch editor proof
-
-        This Markdown was loaded by the native host.
-
-        Edit this text, then press Command-S while the editor has focus.
-        """ + "\n"
-
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
-    private var coordinator: BridgeCoordinator!
+    private var documentSession: DocumentSession!
+    private var allowClosingDirtyWindow = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        coordinator = BridgeCoordinator()
-        coordinator.delegate = self
+        let coordinator = BridgeCoordinator()
+        documentSession = DocumentSession(coordinator: coordinator)
+        documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
 
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
@@ -29,105 +19,124 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Paperbranch editor proof host"
+        window.title = "Paperbranch"
         window.contentView = coordinator.webView
+        window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
 
         installMenu()
-
         coordinator.load(url: HarnessLocation.url)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
-    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     private func installMenu() {
         let mainMenu = NSMenu()
-
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
-        appMenu.addItem(
-            withTitle: "Quit Paperbranch editor proof host",
-            action: #selector(NSApplication.terminate(_:)),
-            keyEquivalent: "q"
-        )
+        appMenu.addItem(withTitle: "Quit Paperbranch", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let fileMenuItem = NSMenuItem()
         mainMenu.addItem(fileMenuItem)
         let fileMenu = NSMenu(title: "File")
         fileMenuItem.submenu = fileMenu
 
-        // This is the item the "Command-S reaches the native host even
-        // with focus inside the editor" checkbox is about: AppKit resolves
-        // a key-equivalent against the main menu before delivering the
-        // keyDown to the WKWebView's own key handling, so this fires
-        // regardless of which view has first responder status.
-        let saveItem = NSMenuItem(
-            title: "Save",
-            action: #selector(handleSave),
-            keyEquivalent: "s"
-        )
+        let openItem = NSMenuItem(title: "Open…", action: #selector(handleOpen), keyEquivalent: "o")
+        openItem.keyEquivalentModifierMask = [.command]
+        openItem.target = self
+        fileMenu.addItem(openItem)
+
+        let saveItem = NSMenuItem(title: "Save", action: #selector(handleSave), keyEquivalent: "s")
         saveItem.keyEquivalentModifierMask = [.command]
         saveItem.target = self
         fileMenu.addItem(saveItem)
-
         NSApp.mainMenu = mainMenu
     }
 
+    @objc private func handleOpen() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "md")!, .init(filenameExtension: "markdown")!]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.openDocument(at: url)
+        }
+    }
+
+    private func openDocument(at url: URL) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await documentSession.open(url)
+                updateWindowTitle()
+            } catch {
+                presentError(error, for: url)
+            }
+        }
+    }
+
+    // AppKit resolves this key equivalent through the main menu before the
+    // WKWebView receives it, so this native command works with editor focus.
     @objc private func handleSave() {
-        Task {
+        Task { [weak self] in
+            guard let self, documentSession.fileURL != nil else { return }
             do {
-                let markdown = try await coordinator.requestSave()
-                print(
-                    "[paperbranch-proof-host] Command-S requested a save. "
-                        + "Received \(markdown.count) characters of serialized Markdown. "
-                        + "No file was written."
-                )
+                try await documentSession.save()
+                updateWindowTitle()
             } catch {
-                print("[paperbranch-proof-host] save request failed: \(error)")
+                presentError(error, for: documentSession.fileURL)
             }
         }
     }
-}
 
-extension AppDelegate: BridgeCoordinatorDelegate {
-    func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator) {
-        Task {
-            guard await waitForEditorBridge(in: coordinator) else {
-                print("[paperbranch-proof-host] editor bridge did not become ready")
-                return
-            }
+    private func updateWindowTitle() {
+        guard let fileURL = documentSession.fileURL else {
+            window.title = "Paperbranch"
+            window.isDocumentEdited = false
+            return
+        }
+        window.title = fileURL.lastPathComponent
+        window.isDocumentEdited = documentSession.isDirty
+    }
 
-            do {
-                let applied = try await coordinator.externalReplace(markdown: Self.sampleMarkdown)
-                guard applied else {
-                    print("[paperbranch-proof-host] sample Markdown was not loaded")
-                    return
+    private func presentError(_ error: Error, for url: URL?) {
+        let alert = NSAlert(error: error)
+        alert.messageText = "Could not save \(url?.lastPathComponent ?? "document")"
+        alert.beginSheetModal(for: window)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard documentSession.isDirty, !allowClosingDirtyWindow else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \(documentSession.fileURL?.lastPathComponent ?? "this document")?"
+        alert.informativeText = "Your edits will be lost if you do not save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard")
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                Task {
+                    do {
+                        try await self.documentSession.save()
+                        self.allowClosingDirtyWindow = true
+                        sender.performClose(nil)
+                    } catch {
+                        self.presentError(error, for: self.documentSession.fileURL)
+                    }
                 }
-                print("[paperbranch-proof-host] loaded sample Markdown")
-            } catch {
-                print("[paperbranch-proof-host] failed to load sample Markdown: \(error)")
+            case .alertThirdButtonReturn:
+                allowClosingDirtyWindow = true
+                sender.performClose(nil)
+            default:
+                break
             }
-        }
-    }
-
-    private func waitForEditorBridge(in coordinator: BridgeCoordinator) async -> Bool {
-        for _ in 0..<50 {
-            let ready =
-                (try? await coordinator.webView.evaluateJavaScript(
-                    "typeof window.paperbranchNativeBridge !== 'undefined'"
-                )) as? Bool ?? false
-            if ready { return true }
-            try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return false
-    }
-
-    func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool) {
-        print("[paperbranch-proof-host] dirty state changed: \(dirty)")
     }
 }

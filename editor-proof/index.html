@@ -2,7 +2,44 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Paperbranch editor proof harness</title>
+    <title>Paperbranch</title>
+    <style>
+      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+      * { box-sizing: border-box; }
+      html, body { min-height: 100%; margin: 0; }
+      body { background: #22231f; color: #e8e3d8; }
+      #editor-root { max-width: 710px; margin: clamp(50px, 9vh, 110px) auto 120px; padding: 0 24px; }
+      .ProseMirror {
+        outline: none;
+        color: #e8e3d8;
+        font: 19px/1.82 ui-serif, "New York", Charter, Georgia, serif;
+        overflow-wrap: anywhere;
+      }
+      .ProseMirror > :first-child { margin-top: 0; }
+      .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4 {
+        color: #fffaf0; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        letter-spacing: -.025em; line-height: 1.18;
+      }
+      .ProseMirror h1 { margin: 0 0 .9em; text-align: center; font-size: clamp(42px, 7vw, 66px); }
+      .ProseMirror h2 { margin: 2.1em 0 .7em; font-size: 26px; }
+      .ProseMirror h3 { margin: 1.7em 0 .6em; font-size: 20px; }
+      .ProseMirror h4 { margin: 1.5em 0 .5em; font-size: 17px; }
+      .ProseMirror p { margin: 0 0 1.2em; }
+      .ProseMirror a { color: #ef9b78; text-underline-offset: 3px; }
+      .ProseMirror em, .ProseMirror del { color: #c6c1b6; }
+      .ProseMirror blockquote { margin: 1.8em 0; padding: .3em 0 .3em 1.25em; border-left: 3px solid #e88e68; color: #c8c3b8; font-style: italic; }
+      .ProseMirror ul, .ProseMirror ol { margin: 0 0 1.3em; padding-left: 1.35em; }
+      .ProseMirror li { margin: .35em 0; padding-left: .2em; }
+      .ProseMirror code { padding: .16em .38em; border-radius: 5px; background: #34362f; color: #f0a785; font: .84em "SFMono-Regular", Consolas, monospace; }
+      .ProseMirror pre { margin: 1.7em 0; padding: 20px 22px; overflow: auto; border-radius: 13px; background: #272924; }
+      .ProseMirror pre code { padding: 0; background: transparent; color: #eceadf; font-size: 13px; line-height: 1.65; }
+      .ProseMirror hr { margin: 2.4em 0; border: 0; border-top: 1px solid rgba(255,255,255,.13); }
+      .ProseMirror table { width: 100%; margin: 1.6em 0; border-collapse: collapse; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; }
+      .ProseMirror th, .ProseMirror td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.13); text-align: left; }
+      .ProseMirror th { color: #aaa79d; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+      .ProseMirror img { max-width: 100%; border-radius: 10px; }
+      #editor-root[data-admission="blocked"] { color: #f0a785; font: 16px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
+    </style>
   </head>
   <body>
     <div id="editor-root"></div>

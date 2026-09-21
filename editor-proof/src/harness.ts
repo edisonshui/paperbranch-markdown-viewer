@@ -81,6 +81,14 @@ async function externalReplace(markdown: string): Promise<{ applied: boolean }> 
   return { applied: true };
 }
 
+// Native calls this only after its coordinated write has completed. Keeping
+// the baseline here makes a failed write visibly dirty instead of pretending
+// that serialization alone saved the document.
+function saveSucceeded(markdown: string): void {
+  baseline = markdown;
+  setDirty(false);
+}
+
 window.editorContract = {
   loadMarkdown,
   getMarkdown: getMarkdownContent,
@@ -88,8 +96,9 @@ window.editorContract = {
 };
 
 installNativeBridge({
-  loadMarkdown,
+  loadDocument: loadMarkdown,
   getMarkdown: getMarkdownContent,
   isDirty: () => dirty,
   externalReplace,
+  saveSucceeded,
 });

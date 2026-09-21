@@ -22,7 +22,7 @@ import XCTest
 /// - Simulated external-content messages: fully covered here, since they
 ///   are ordinary async calls into the page, not OS input events.
 /// - Bridge surface restriction: verified here (only `"paperbranch"` is
-///   registered, and the JS surface it exposes is exactly two calls).
+///   registered, and the JS surface exposes only fixed content operations).
 ///
 /// Run with `native-host/test.sh`, which starts the same Vite dev server
 /// the Playwright suite uses before running `swift test`.
@@ -76,6 +76,63 @@ final class BridgeCoordinatorTests: XCTestCase {
         // The only observable effect of a save request is the returned
         // string -- nothing on disk changed.
         XCTAssertEqual(before, after)
+    }
+
+    @MainActor
+    func testOpenEditAndSaveWritesOnlyAfterExplicitSave() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("paperbranch-workflow-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let documentURL = directory.appendingPathComponent("workflow.markdown")
+        let original = "# Workflow proof\n\nThe original text.\n"
+        try original.write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+
+        try await insertExclamationMark(in: coordinator)
+        let editorIsDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(editorIsDirty)
+        XCTAssertTrue(session.isDirty)
+
+        // Editing happens only in WKWebView memory. The real file remains
+        // byte-for-byte unchanged until the native Save command is invoked.
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), original)
+
+        try await session.save()
+        let saved = try String(contentsOf: documentURL, encoding: .utf8)
+        XCTAssertNotEqual(saved, original)
+        XCTAssertTrue(saved.contains("Workflow proof!"))
+        XCTAssertFalse(session.isDirty)
+    }
+
+    @MainActor
+    func testFailedSaveKeepsTheDocumentDirty() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("paperbranch-failed-save-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let documentURL = directory.appendingPathComponent("failure.md")
+        try "# Failure proof\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        _ = try await pollIsDirty(coordinator, expecting: true)
+
+        // Removing the containing directory after opening forces the real
+        // coordinated write to fail. The editor must remain dirty.
+        try FileManager.default.removeItem(at: directory)
+        await XCTAssertThrowsErrorAsync { try await session.save() }
+        XCTAssertTrue(session.isDirty)
+        XCTAssertNotNil(session.lastError)
     }
 
     @MainActor
@@ -175,7 +232,7 @@ final class BridgeCoordinatorTests: XCTestCase {
             try await coordinator.webView.evaluateJavaScript(
                 "Object.keys(window.paperbranchNativeBridge).sort()"
             ) as? [String]
-        XCTAssertEqual(surface, ["externalReplace", "requestSave"])
+        XCTAssertEqual(surface, ["externalReplace", "loadDocument", "requestSave", "saveSucceeded"])
 
         XCTAssertEqual(BridgeCoordinator.messageHandlerName, "paperbranch")
     }
@@ -202,11 +259,42 @@ final class BridgeCoordinatorTests: XCTestCase {
         return last
     }
 
+    @MainActor
+    private func insertExclamationMark(in coordinator: BridgeCoordinator) async throws {
+        _ = try await coordinator.webView.callAsyncJavaScript(
+            """
+            const root = document.querySelector('#editor-root .ProseMirror');
+            const heading = root.querySelector('h1');
+            root.focus();
+            const range = document.createRange();
+            range.selectNodeContents(heading);
+            range.collapse(false);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('insertText', false, '!');
+            return true;
+            """,
+            contentWorld: .page
+        )
+    }
+
     private func snapshotProofDirectoryContents() throws -> [String] {
         let editorProofDirectory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // PaperbranchBridgeCoreTests
             .deletingLastPathComponent()  // Tests
             .deletingLastPathComponent()  // native-host
         return try FileManager.default.contentsOfDirectory(atPath: editorProofDirectory.path).sorted()
+    }
+
+    private func XCTAssertThrowsErrorAsync(
+        _ expression: () async throws -> Void,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            try await expression()
+            XCTFail("expected operation to throw", file: file, line: line)
+        } catch {}
     }
 }

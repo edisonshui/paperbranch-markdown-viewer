@@ -10,6 +10,8 @@ import type { AdmissionResult } from "./admission";
 // host did not already decide to send.
 
 export interface NativeBridgeHost {
+  /** Native -> JS. Loads the one document selected by the native host. */
+  loadDocument(markdown: string): Promise<AdmissionResult>;
   /** Native -> JS. Called once per document open, and again on any
    * external-content replacement. Runs the document through the
    * editor-admission seam exactly like a normal load. */
@@ -25,6 +27,8 @@ export interface NativeBridgeHost {
    * reported as not applied, for a later conflict flow to handle -- this
    * proof does not build that flow, only the preserve-vs-replace branch. */
   externalReplace(markdown: string): Promise<{ applied: boolean }>;
+  /** Native -> JS. Records the exact serialized content native finished writing. */
+  saveSucceeded(markdown: string): void;
 }
 
 interface OutgoingMessage {
@@ -48,7 +52,9 @@ export function reportDirtyState(dirty: boolean): void {
  * generic eval hook, no file-system access. */
 export function installNativeBridge(host: NativeBridgeHost): void {
   window.paperbranchNativeBridge = {
+    loadDocument: (markdown: string) => host.loadDocument(markdown),
     requestSave: () => host.getMarkdown(),
     externalReplace: (markdown: string) => host.externalReplace(markdown),
+    saveSucceeded: (markdown: string) => host.saveSucceeded(markdown),
   };
 }

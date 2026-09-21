@@ -9,8 +9,10 @@ export interface EditorContract {
 }
 
 export interface PaperbranchNativeBridge {
+  loadDocument(markdown: string): Promise<AdmissionResult>;
   requestSave(): string;
   externalReplace(markdown: string): Promise<{ applied: boolean }>;
+  saveSucceeded(markdown: string): void;
 }
 
 declare global {

@@ -6,6 +6,7 @@ import WebKit
 /// docs/specs/paperbranch-implementation.md ("Native and editor boundary").
 public enum BridgeError: Error {
     case unexpectedResult
+    case bridgeNotReady
 }
 
 @MainActor
@@ -19,9 +20,9 @@ public protocol BridgeCoordinatorDelegate: AnyObject {
 ///
 /// - JS -> native: a single message handler, `"paperbranch"`, which only
 ///   ever carries `{ type: "dirtyStateChanged", dirty: Bool }`.
-/// - native -> JS: two calls into `window.paperbranchNativeBridge`,
-///   `requestSave()` (returns serialized Markdown, writes nothing) and
-///   `externalReplace(markdown)` (returns whether it was applied).
+/// - native -> JS: fixed calls into `window.paperbranchNativeBridge` to load
+///   document content, request serialized Markdown, record a completed save,
+///   and replace clean external content.
 ///
 /// Nothing here exposes a file path or a read/write primitive to
 /// JavaScript; the native layer decides what markdown to send and what (if
@@ -52,6 +53,16 @@ public final class BridgeCoordinator: NSObject {
 
     public func load(url: URL) {
         webView.load(URLRequest(url: url))
+    }
+
+    /// Sends document content across the deliberately small native/editor
+    /// boundary. JavaScript receives content, never a path or file handle.
+    public func loadDocument(markdown: String) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            "return await window.paperbranchNativeBridge.loadDocument(markdown);",
+            arguments: ["markdown": markdown],
+            contentWorld: .page
+        )
     }
 
     /// Native -> JS: requests the currently serialized Markdown. Never
@@ -87,6 +98,28 @@ public final class BridgeCoordinator: NSObject {
             throw BridgeError.unexpectedResult
         }
         return applied
+    }
+
+    /// A native write is the source of truth. Only after it has completed do
+    /// we let the editor replace its dirty baseline.
+    public func saveSucceeded(markdown: String) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            "window.paperbranchNativeBridge.saveSucceeded(markdown); return true;",
+            arguments: ["markdown": markdown],
+            contentWorld: .page
+        )
+    }
+
+    public func waitForNativeBridge() async throws {
+        for _ in 0..<50 {
+            let ready =
+                (try? await webView.evaluateJavaScript(
+                    "typeof window.paperbranchNativeBridge !== 'undefined'"
+                )) as? Bool ?? false
+            if ready { return }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        throw BridgeError.bridgeNotReady
     }
 }
 
