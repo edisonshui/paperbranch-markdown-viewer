@@ -8,9 +8,9 @@ content, and save only through Command-S.
 ## Structure
 
 - `Sources/PaperbranchBridgeCore/BridgeCoordinator.swift` -- the reusable
-  bridge: owns the `WKWebView`, registers the one narrow message handler
-  (`"paperbranch"`, carrying only `{ type: "dirtyStateChanged", dirty }`),
-  and calls the fixed content-only JS bridge functions.
+  bridge: owns the `WKWebView`, registers the one narrow `"paperbranch"`
+  message handler for dirty state and document-navigation state, and calls
+  the fixed content-only JS bridge functions.
 - `Sources/PaperbranchBridgeCore/DocumentSession.swift` -- native ownership
   of the selected Markdown document, including explicit coordinated writes.
 - `Sources/PaperbranchEditorProofHost/` -- the app itself: one window, one
