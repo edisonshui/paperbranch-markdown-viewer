@@ -12,7 +12,7 @@ let package = Package(
         ),
         .testTarget(
             name: "PaperbranchBridgeCoreTests",
-            dependencies: ["PaperbranchBridgeCore"]
+            dependencies: ["PaperbranchBridgeCore", "PaperbranchEditorProofHost"]
         ),
     ]
 )

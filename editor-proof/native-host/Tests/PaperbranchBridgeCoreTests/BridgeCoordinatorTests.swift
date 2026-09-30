@@ -3,6 +3,7 @@ import WebKit
 import XCTest
 
 @testable import PaperbranchBridgeCore
+@testable import PaperbranchEditorProofHost
 
 /// Drives a real (off-screen, never shown in a window) `WKWebView` loading
 /// the same editor-proof harness Playwright tests, through
@@ -74,6 +75,81 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertFalse(presentation.render(state))
             XCTAssertTrue(window.contentView === appKitContent)
         }
+    }
+
+    @MainActor
+    func testPresentationSwapsKeepTheLibraryWindowFrame() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-frame")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        // Mirrors the app: the AppKit content is a view controller whose detached view keeps its old size.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 220), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        let appKitContent = NSViewController()
+        appKitContent.view = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 220))
+        window.contentViewController = appKitContent
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        let state = PaperbranchWindowPresentationState(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )
+        XCTAssertTrue(presentation.render(state))
+        window.setFrame(NSRect(x: 0, y: 0, width: 1440, height: 900), display: false)
+        let chosenFrame = window.frame
+
+        presentation.restoreAppKitPresentation()
+        XCTAssertTrue(window.contentViewController === appKitContent)
+        XCTAssertEqual(window.frame, chosenFrame)
+        XCTAssertTrue(presentation.render(state))
+        XCTAssertEqual(window.frame, chosenFrame)
+        presentation.restoreAppKitPresentation()
+        XCTAssertEqual(window.frame, chosenFrame)
+    }
+
+    @MainActor
+    func testUnchangedLibraryRefreshDoesNotSwapPresentations() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-refresh")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try "# Nested\n".write(to: folderURL.appendingPathComponent("Nested.md"), atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let appKitContent = NSView()
+        window.contentView = appKitContent
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        let sidebar = LibrarySidebarViewController()
+        _ = sidebar.view
+        // AppDelegate routes sidebar selections through routeFinderOpen, which restores AppKit first.
+        var routedSelections: [URL] = []
+        sidebar.selectDocument = { url in
+            routedSelections.append(url)
+            presentation.restoreAppKitPresentation()
+        }
+        let state = PaperbranchWindowPresentationState(
+            library: library,
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )
+        sidebar.show(library, sidebarState: state.sidebarState, selectedDocumentURL: documentURL)
+        XCTAssertTrue(presentation.render(state))
+        let swiftUIContent = try XCTUnwrap(window.contentView)
+
+        // The 1 s refresh: refreshLibraryIfNeeded() then showLibrary().
+        try library.refresh()
+        sidebar.show(library, sidebarState: state.sidebarState, selectedDocumentURL: documentURL)
+        XCTAssertTrue(window.contentView === swiftUIContent)
+        XCTAssertTrue(presentation.render(state))
+
+        XCTAssertEqual(routedSelections, [])
+        XCTAssertTrue(window.contentView === swiftUIContent)
     }
 
     @MainActor

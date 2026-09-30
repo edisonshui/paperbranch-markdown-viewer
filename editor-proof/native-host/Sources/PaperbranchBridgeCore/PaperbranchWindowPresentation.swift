@@ -126,7 +126,10 @@ public final class PaperbranchWindowPresentation {
         guard isShowingSwiftUI else { return }
         restoreAppKitContent()
         if let appKitContentViewController {
+            // Assigning a content view controller resizes the window to that controller's detached view, so keep the user's frame.
+            let frame = window.frame
             window.contentViewController = appKitContentViewController
+            window.setFrame(frame, display: true)
         } else {
             window.contentView = appKitContentView
         }
