@@ -95,8 +95,10 @@ final class BridgeCoordinatorTests: XCTestCase {
 
         window.contentView?.layoutSubtreeIfNeeded()
 
-        XCTAssertEqual(window.contentView?.accessibilityLabel(), "Paperbranch Library")
-        XCTAssertEqual(window.contentView?.accessibilityValue() as? String, "Selected Markdown document: Selected.md. Document outline: . Reading progress: 0%. Reader chrome: Selected.md. Reader canvas: constrained. Reader footer: End of document.")
+        let root = try XCTUnwrap(window.contentView)
+        XCTAssertEqual(root.accessibilityLabel(), "Paperbranch Library")
+        let selectedDocument = try XCTUnwrap(accessibilityElement("paperbranch.library.selected-document", in: renderedAccessibilityElements(in: root)))
+        XCTAssertEqual(selectedDocument.value(forKey: "accessibilityLabel") as? String, "Selected Markdown document: Selected.md")
         XCTAssertTrue(windowContainsView(window, target: webView))
     }
 
@@ -107,7 +109,8 @@ final class BridgeCoordinatorTests: XCTestCase {
         let documentURL = libraryURL.appendingPathComponent("Reading.md")
         try "# Reading\n\nA document for focused reading.\n".write(to: documentURL, atomically: true, encoding: .utf8)
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
+        // Wide enough that the reader column is wider than Variant B's constrained canvas.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
         let webView = WKWebView()
         let appKitDocumentView = NSView()
         webView.translatesAutoresizingMaskIntoConstraints = false
@@ -126,14 +129,33 @@ final class BridgeCoordinatorTests: XCTestCase {
             document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
         )))
 
-        window.contentView?.layoutSubtreeIfNeeded()
+        let root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        let elements = renderedAccessibilityElements(in: root)
+        XCTAssertNil(root.accessibilityValue())
 
-        XCTAssertEqual(
-            window.contentView?.accessibilityValue() as? String,
-            "Selected Markdown document: Reading.md. Document outline: . Reading progress: 0%. Reader chrome: Reading.md. Reader canvas: constrained. Reader footer: End of document."
-        )
+        let sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        let topBar = try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements))
+        let canvas = try XCTUnwrap(accessibilityElement("paperbranch.reader.document-canvas", in: elements))
+        let footer = try XCTUnwrap(accessibilityElement("paperbranch.reader.footer", in: elements))
+        XCTAssertNotEqual(root.accessibilityIdentifier(), "paperbranch.library.sidebar")
+        XCTAssertTrue(accessibilityDescendants(of: topBar).contains { $0.value(forKey: "accessibilityValue") as? String == "Reading.md" })
+        XCTAssertTrue(accessibilityDescendants(of: canvas).contains { $0 === webView })
+
+        // Accessibility frames use bottom-left screen coordinates.
+        let rootFrame = accessibilityFrame(of: root)
+        let sidebarFrame = accessibilityFrame(of: sidebar)
+        let readerColumn = NSRect(x: sidebarFrame.maxX, y: rootFrame.minY, width: rootFrame.maxX - sidebarFrame.maxX, height: rootFrame.height)
+        let canvasFrame = accessibilityFrame(of: canvas)
+        let webViewFrame = accessibilityFrame(of: webView)
+        XCTAssertFalse(webViewFrame.isEmpty)
+        XCTAssertTrue(canvasFrame.contains(webViewFrame))
+        XCTAssertLessThan(canvasFrame.width, readerColumn.width)
+        XCTAssertEqual(canvasFrame.midX, readerColumn.midX, accuracy: 1)
+        XCTAssertGreaterThanOrEqual(accessibilityFrame(of: topBar).minY, canvasFrame.maxY)
+        XCTAssertLessThanOrEqual(accessibilityFrame(of: footer).maxY, canvasFrame.minY)
+
         XCTAssertTrue(windowContainsView(window, target: webView))
-        XCTAssertGreaterThanOrEqual(webView.bounds.width, 600)
         XCTAssertFalse(appKitDocumentView.constraints.contains { constraint in
             constraint.firstItem as? WKWebView === webView || constraint.secondItem as? WKWebView === webView
         })
@@ -194,7 +216,10 @@ final class BridgeCoordinatorTests: XCTestCase {
             readingProgress: 0.42
         ))
 
-        XCTAssertEqual(window.contentView?.accessibilityValue() as? String, "Selected Markdown document: Selected.md. Document outline: Selected, Details. Reading progress: 42%. Reader chrome: Selected.md. Reader canvas: constrained. Reader footer: End of document.")
+        let elements = renderedAccessibilityElements(in: try XCTUnwrap(window.contentView))
+        XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-0", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Selected")
+        XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-1", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Details")
+        XCTAssertEqual(try XCTUnwrap(accessibilityElement("paperbranch.reader.progress", in: elements)?.value(forKey: "accessibilityValue") as? Double), 0.42, accuracy: 0.001)
         presentation.selectOutline(id: "heading-1")
         XCTAssertEqual(selectedOutlineID, "heading-1")
     }
@@ -213,14 +238,12 @@ final class BridgeCoordinatorTests: XCTestCase {
 
         let window = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
-        presentation.render(.init(
+        XCTAssertFalse(presentation.render(.init(
             library: try LibraryBrowser.choose(libraryURL),
             sidebarState: LibrarySidebarState(),
             selectedDocumentURL: outsideDocumentURL,
             document: .init(url: outsideDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
-        ))
-
-        XCTAssertNil(presentation.window.contentView?.accessibilityValue())
+        )))
     }
 
     @MainActor
@@ -1191,6 +1214,33 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTFail("expected operation to throw", file: file, line: line)
         } catch {}
     }
+}
+
+/// Reads SwiftUI's rendered accessibility tree. SwiftUI builds that tree only for an assistive client, so this sets the same flag VoiceOver sets.
+@MainActor
+private func renderedAccessibilityElements(in root: NSView) -> [NSObject] {
+    let application = NSApplication.shared
+    let enhancedUserInterface = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+    application.accessibilitySetValue(true, forAttribute: enhancedUserInterface)
+    defer { application.accessibilitySetValue(false, forAttribute: enhancedUserInterface) }
+    return accessibilityDescendants(of: root)
+}
+
+/// SwiftUI's accessibility nodes do not bridge to `NSAccessibilityProtocol`, so the tree is read through key-value coding.
+@MainActor
+private func accessibilityDescendants(of element: NSObject) -> [NSObject] {
+    let children = element.value(forKey: "accessibilityChildren") as? [NSObject] ?? []
+    return children.flatMap { [$0] + accessibilityDescendants(of: $0) }
+}
+
+@MainActor
+private func accessibilityElement(_ identifier: String, in elements: [NSObject]) -> NSObject? {
+    elements.first { $0.value(forKey: "accessibilityIdentifier") as? String == identifier }
+}
+
+@MainActor
+private func accessibilityFrame(of element: NSObject) -> NSRect {
+    (element.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue ?? .zero
 }
 
 @MainActor

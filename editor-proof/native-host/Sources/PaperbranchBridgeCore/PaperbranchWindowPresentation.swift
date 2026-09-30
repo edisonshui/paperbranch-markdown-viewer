@@ -112,9 +112,7 @@ public final class PaperbranchWindowPresentation {
             toggleSidebar: toggleSidebar
         ))
         hostingView.setAccessibilityLabel("Paperbranch Library")
-        hostingView.setAccessibilityIdentifier("paperbranch.library.sidebar")
-        let outline = state.outline.map(\.text).joined(separator: ", ")
-        hostingView.setAccessibilityValue("Selected Markdown document: \(selectedDocumentURL.lastPathComponent). Document outline: \(outline). Reading progress: \(Int((state.readingProgress * 100).rounded()))%. Reader chrome: \(selectedDocumentURL.lastPathComponent). Reader canvas: constrained. Reader footer: End of document.")
+        hostingView.setAccessibilityIdentifier("paperbranch.library.window")
         if !isShowingSwiftUI {
             window.contentViewController = nil
             window.contentView = hostingView
@@ -249,7 +247,8 @@ private struct PaperbranchLibraryWindowView: View {
                         .frame(height: 2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .scaleEffect(x: readingProgress, y: 1, anchor: .leading)
-                        .accessibilityHidden(true)
+                        .accessibilityRepresentation { ProgressView("Reading progress", value: readingProgress) }
+                        .accessibilityIdentifier("paperbranch.reader.progress")
                     ZStack {
                         PaperbranchWebView(webView: webView)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -257,6 +256,8 @@ private struct PaperbranchLibraryWindowView: View {
                     }
                         .frame(maxWidth: 710)
                         .padding(.top, 50)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Document canvas")
                         .accessibilityIdentifier("paperbranch.reader.document-canvas")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
