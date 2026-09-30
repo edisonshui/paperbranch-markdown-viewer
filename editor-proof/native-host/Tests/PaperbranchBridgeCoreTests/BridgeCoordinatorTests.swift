@@ -1110,6 +1110,38 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSavingDirtyDocumentReportsNoConflictButLaterExternalChangeDoes() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-save-no-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("saved.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        var reportedConflicts: [DocumentConflict?] = []
+        session.conflictDidChange = { reportedConflicts.append($0) }
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+
+        // The file monitor sees Paperbranch's own write. Any conflict reported here shows the alert.
+        try await session.save()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(reportedConflicts, [], "Saving reported a conflict for Paperbranch's own write")
+        XCTAssertFalse(session.isDirty)
+
+        try await insertExclamationMark(in: coordinator)
+        let becameDirtyAgain = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirtyAgain)
+        // An atomic replacement. The save moved the file to a new inode, and an in-place write is not seen yet.
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+    }
+
+    @MainActor
     func testCleanDocumentShowsUnavailableStateAfterMovement() async throws {
         let directory = try makeTemporaryDirectory(named: "paperbranch-moved-document")
         defer { try? FileManager.default.removeItem(at: directory) }

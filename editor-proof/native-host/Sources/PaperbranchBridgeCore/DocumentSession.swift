@@ -86,8 +86,9 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
             }
             let markdown = try await coordinator.requestSave()
             try coordinatedWrite(markdown, to: fileURL)
-            try await coordinator.saveSucceeded(markdown: markdown)
+            // The file monitor can reconcile during the await below, so it must already see this write as ours.
             lastDiskMarkdown = markdown
+            try await coordinator.saveSucceeded(markdown: markdown)
             isDirty = false
             setConflict(nil)
             lastError = nil
