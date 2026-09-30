@@ -18,6 +18,8 @@ final class StandaloneDocumentWindow {
             backing: .buffered,
             defer: false
         )
+        // AppDelegate owns this window, so closing it must not release it a second time.
+        window.isReleasedWhenClosed = false
         window.delegate = delegate
         window.contentViewController = presentation
         coordinator.load(url: HarnessLocation.url)

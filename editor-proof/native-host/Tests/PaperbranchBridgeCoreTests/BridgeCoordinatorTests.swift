@@ -372,6 +372,27 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testClosingStandaloneWindowLeavesItAliveForItsOwner() throws {
+        let delegate = AppDelegate()
+        // The app's event loop drains a pool after each event, so each step here drains its own.
+        let standalone = autoreleasepool { StandaloneDocumentWindow(delegate: delegate) }
+        weak var closedWindow = standalone.window
+        autoreleasepool { standalone.window.makeKeyAndOrderFront(nil) }
+
+        autoreleasepool { standalone.window.performClose(nil) }
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+
+        // AppDelegate owns each Standalone window until windowWillClose drops it. A window that
+        // also releases itself on close is released twice, which crashed the close animation.
+        guard closedWindow != nil else {
+            // Keeps the runner alive: releasing the owner would release the freed window again.
+            _ = Unmanaged.passRetained(standalone)
+            return XCTFail("Closing the Standalone window freed it while its owner still held it")
+        }
+        XCTAssertFalse(standalone.window.isVisible)
+    }
+
+    @MainActor
     func testLibraryWindowOpensAtDefaultContentSizeWithoutSavedFrame() throws {
         UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
         defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
