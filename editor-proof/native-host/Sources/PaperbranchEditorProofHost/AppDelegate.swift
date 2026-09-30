@@ -60,7 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             onSelectDocument: { [weak self] url in self?.routeFinderOpen([url]) },
             onSelectOutline: { [weak self] id in self?.selectOutline(id) },
             restoreAppKitContent: { [weak self] in self?.documentController.restoreDocumentView() },
-            onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() }
+            onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() },
+            onOpen: { [weak self] in self?.handleOpen() }
         )
         window.makeKeyAndOrderFront(nil)
         installMenu()

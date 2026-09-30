@@ -545,6 +545,46 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderTopBarOpenButtonInvokesInjectedOpenAction() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-open")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        var openCount = 0
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView(), onOpen: { openCount += 1 })
+        let library = try LibraryBrowser.choose(libraryURL)
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        let reading = PaperbranchWindowPresentationState(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document)
+        let emptyReader = PaperbranchWindowPresentationState(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: document)
+
+        for (index, state) in [reading, emptyReader].enumerated() {
+            XCTAssertTrue(presentation.render(state))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let elements = renderedAccessibilityElements(in: root)
+            let topBar = try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements))
+            let topBarElements = accessibilityDescendants(of: topBar)
+
+            // Variant B's Open button replaces the "Reading" label on the right of the top bar.
+            XCTAssertFalse(topBarElements.contains { $0.value(forKey: "accessibilityValue") as? String == "Reading" })
+            let openButton = try XCTUnwrap(accessibilityElement("paperbranch.reader.open", in: topBarElements))
+            XCTAssertEqual(openButton.value(forKey: "accessibilityLabel") as? String, "Open")
+            let toggle = try XCTUnwrap(accessibilityElement("paperbranch.reader.toggle-sidebar", in: topBarElements))
+            XCTAssertGreaterThan(accessibilityFrame(of: openButton).minX, accessibilityFrame(of: toggle).maxX)
+            if let name = topBarElements.first(where: { $0.value(forKey: "accessibilityValue") as? String == "Reading.md" }) {
+                XCTAssertGreaterThan(accessibilityFrame(of: openButton).minX, accessibilityFrame(of: name).maxX)
+            }
+
+            // Pressing the rendered button runs the injected Open command and leaves the reader showing for its sheet.
+            _ = openButton.perform(NSSelectorFromString("accessibilityPerformPress"))
+            XCTAssertEqual(openCount, index + 1)
+            XCTAssertTrue(window.contentView === root)
+        }
+    }
+
+    @MainActor
     func testRenderedLibraryDocumentSelectionInvokesInjectedAction() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-selection")
         defer { try? FileManager.default.removeItem(at: libraryURL) }

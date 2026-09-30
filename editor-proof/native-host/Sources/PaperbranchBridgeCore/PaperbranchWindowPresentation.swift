@@ -54,6 +54,7 @@ public final class PaperbranchWindowPresentation {
     private let onSelectDocument: (URL) -> Void
     private let onSelectOutline: (String) -> Void
     private let onToggleSidebar: () -> Void
+    private let onOpen: () -> Void
     private let restoreAppKitContent: () -> Void
     private let appKitContentViewController: NSViewController?
     private let appKitContentView: NSView?
@@ -68,7 +69,8 @@ public final class PaperbranchWindowPresentation {
         onSelectDocument: @escaping (URL) -> Void = { _ in },
         onSelectOutline: @escaping (String) -> Void = { _ in },
         restoreAppKitContent: @escaping () -> Void = {},
-        onToggleSidebar: @escaping () -> Void = {}
+        onToggleSidebar: @escaping () -> Void = {},
+        onOpen: @escaping () -> Void = {}
     ) {
         self.window = window
         self.webView = webView
@@ -76,6 +78,7 @@ public final class PaperbranchWindowPresentation {
         self.onSelectOutline = onSelectOutline
         self.restoreAppKitContent = restoreAppKitContent
         self.onToggleSidebar = onToggleSidebar
+        self.onOpen = onOpen
         appKitContentViewController = window.contentViewController
         appKitContentView = window.contentView
     }
@@ -111,7 +114,8 @@ public final class PaperbranchWindowPresentation {
             webView: webView,
             selectDocument: selectDocument(at:),
             selectOutline: selectOutline(id:),
-            toggleSidebar: toggleSidebar
+            toggleSidebar: toggleSidebar,
+            open: open
         ))
         hostingView.setAccessibilityLabel("Paperbranch Library")
         hostingView.setAccessibilityIdentifier("paperbranch.library.window")
@@ -167,6 +171,11 @@ public final class PaperbranchWindowPresentation {
         onSelectOutline(id)
     }
 
+    /// Runs the existing Open command. Its panel is a sheet on this window, so the reader stays showing until a document is routed.
+    public func open() {
+        onOpen()
+    }
+
     /// Returns the Library window to AppKit before letting its existing toggle own the collapsed state.
     public func toggleSidebar() {
         restoreAppKitPresentation()
@@ -187,6 +196,7 @@ private struct PaperbranchLibraryWindowView: View {
     let selectDocument: (URL) -> Void
     let selectOutline: (String) -> Void
     let toggleSidebar: () -> Void
+    let open: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
@@ -254,10 +264,18 @@ private struct PaperbranchLibraryWindowView: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Color(red: 0.67, green: 0.65, blue: 0.61))
                         Spacer()
-                        Text("Reading")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(red: 0.84, green: 0.82, blue: 0.77))
                     }
+                    Button(action: open) {
+                        Text("Open")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.95, green: 0.94, blue: 0.90))
+                            .padding(.horizontal, 16)
+                            .frame(height: 32)
+                            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open")
+                    .accessibilityIdentifier("paperbranch.reader.open")
                 }
                 .frame(height: 66)
                 .frame(maxWidth: 1_120)
