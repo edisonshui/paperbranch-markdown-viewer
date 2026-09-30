@@ -80,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     func makeLibraryWindow() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Paperbranch"
+        // Keeps the AppKit fallback states consistent with Variant B's dark reader.
+        window.appearance = NSAppearance(named: .darkAqua)
         window.contentViewController = splitController
         window.delegate = self
         let toolbar = NSToolbar(identifier: "PaperbranchToolbar")

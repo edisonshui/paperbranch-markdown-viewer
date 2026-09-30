@@ -302,6 +302,16 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryWindowIsDarkWhileStandaloneWindowsFollowTheSystem() throws {
+        let libraryWindow = AppDelegate().makeLibraryWindow()
+        defer { libraryWindow.setFrameAutosaveName("") }
+        let standalone = StandaloneDocumentWindow(delegate: AppDelegate())
+
+        XCTAssertEqual(libraryWindow.appearance?.name, .darkAqua)
+        XCTAssertNil(standalone.window.appearance)
+    }
+
+    @MainActor
     func testLibraryWindowOpensAtDefaultContentSizeWithoutSavedFrame() throws {
         UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
         defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
