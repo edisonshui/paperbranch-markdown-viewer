@@ -110,6 +110,66 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderPresentationDropsTheTitleBarRowAndRestoreBringsItBack() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-title-bar")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        // Mirrors makeLibraryWindow: a titled window with a toolbar and a view controller for its AppKit content.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "Reading.md"
+        let toolbar = NSToolbar(identifier: "PaperbranchTitleBarTest-\(UUID().uuidString)")
+        window.toolbar = toolbar
+        let appKitContent = NSViewController()
+        appKitContent.view = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 220))
+        window.contentViewController = appKitContent
+        window.setFrame(NSRect(x: 0, y: 0, width: 1300, height: 800), display: false)
+        let chosenFrame = window.frame
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        let library = try LibraryBrowser.choose(libraryURL)
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        let reading = PaperbranchWindowPresentationState(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document)
+        let emptyReader = PaperbranchWindowPresentationState(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: document)
+
+        for state in [reading, emptyReader] {
+            XCTAssertTrue(presentation.render(state))
+
+            // No title bar row or toolbar: the content fills the window and the reader top bar names the document.
+            XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
+            XCTAssertTrue(window.titlebarAppearsTransparent)
+            XCTAssertEqual(window.titleVisibility, .hidden)
+            XCTAssertFalse(toolbar.isVisible)
+            XCTAssertEqual(window.title, "Reading.md")
+            let root = try XCTUnwrap(window.contentView)
+            XCTAssertEqual(root.frame.size, window.frame.size)
+            root.layoutSubtreeIfNeeded()
+            let elements = renderedAccessibilityElements(in: root)
+
+            // Accessibility frames use bottom-left screen coordinates, and a containing element's frame spans its children.
+            // The reader top bar shares the window buttons' row, and the buttons stay over the sidebar header.
+            let topBar = accessibilityElement("paperbranch.reader.topbar", in: elements).map(accessibilityFrame(of:)) ?? .zero
+            let sidebar = accessibilityElement("paperbranch.library.sidebar", in: elements).map(accessibilityFrame(of:)) ?? .zero
+            let wordmark = accessibilityElement("paperbranch.library.wordmark", in: elements).map(accessibilityFrame(of:)) ?? .zero
+            let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
+            let closeFrame = window.convertToScreen(closeButton.convert(closeButton.bounds, to: nil))
+            XCTAssertGreaterThan(topBar.maxY, closeFrame.minY)
+            XCTAssertTrue(sidebar.contains(closeFrame))
+            XCTAssertFalse(wordmark.isEmpty)
+            XCTAssertLessThanOrEqual(wordmark.maxY, closeFrame.minY)
+
+            presentation.restoreAppKitPresentation()
+            XCTAssertTrue(window.contentViewController === appKitContent)
+            XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
+            XCTAssertFalse(window.titlebarAppearsTransparent)
+            XCTAssertEqual(window.titleVisibility, .visible)
+            XCTAssertTrue(toolbar.isVisible)
+            XCTAssertEqual(window.title, "Reading.md")
+            XCTAssertEqual(window.frame, chosenFrame)
+        }
+    }
+
+    @MainActor
     func testUnchangedLibraryRefreshDoesNotSwapPresentations() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-refresh")
         defer { try? FileManager.default.removeItem(at: libraryURL) }

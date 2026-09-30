@@ -116,8 +116,17 @@ public final class PaperbranchWindowPresentation {
         hostingView.setAccessibilityLabel("Paperbranch Library")
         hostingView.setAccessibilityIdentifier("paperbranch.library.window")
         if !isShowingSwiftUI {
+            // Changing the title bar keeps the content size, so keep the user's frame.
+            let frame = window.frame
             window.contentViewController = nil
             window.contentView = hostingView
+            // Variant B has no title bar row, so the reader top bar names the document and the window buttons sit over the sidebar header.
+            // The title stays set for the Window menu and Mission Control.
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.toolbar?.isVisible = false
+            window.setFrame(frame, display: true)
             isShowingSwiftUI = true
         }
         return true
@@ -127,14 +136,19 @@ public final class PaperbranchWindowPresentation {
     public func restoreAppKitPresentation() {
         guard isShowingSwiftUI else { return }
         restoreAppKitContent()
+        // Assigning a content view controller resizes the window to that controller's detached view, and the title bar change
+        // keeps the content size, so keep the user's frame.
+        let frame = window.frame
+        window.styleMask.remove(.fullSizeContentView)
+        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .visible
+        window.toolbar?.isVisible = true
         if let appKitContentViewController {
-            // Assigning a content view controller resizes the window to that controller's detached view, so keep the user's frame.
-            let frame = window.frame
             window.contentViewController = appKitContentViewController
-            window.setFrame(frame, display: true)
         } else {
             window.contentView = appKitContentView
         }
+        window.setFrame(frame, display: true)
         renderedDocumentURLs = []
         renderedOutlineIDs = []
         isShowingSwiftUI = false
@@ -186,6 +200,10 @@ private struct PaperbranchLibraryWindowView: View {
                             .background(Color(red: 0.91, green: 0.56, blue: 0.41), in: RoundedRectangle(cornerRadius: 7))
                         Text("Paperbranch").font(.system(size: 14, weight: .semibold))
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("paperbranch.library.wordmark")
+                    // Clears the window buttons, which AppKit keeps at the window's top left.
+                    .padding(.top, 20)
                     .padding(.bottom, 16)
                     Text("LIBRARY")
                         .font(.system(size: 10, weight: .bold))
@@ -244,6 +262,7 @@ private struct PaperbranchLibraryWindowView: View {
                 .frame(height: 66)
                 .frame(maxWidth: 1_120)
                 .padding(.horizontal, 24)
+                .background(PaperbranchWindowDragArea())
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(selectedDocumentURL.map { "Reader top bar for \($0.lastPathComponent)" } ?? "Reader top bar")
                 .accessibilityIdentifier("paperbranch.reader.topbar")
@@ -298,6 +317,8 @@ private struct PaperbranchLibraryWindowView: View {
             .background(Color(red: 0.13, green: 0.14, blue: 0.12))
         }
         .background(Color(red: 0.13, green: 0.14, blue: 0.12))
+        // The window's content runs under its transparent title bar, so the reader top bar starts at the window's top edge.
+        .ignoresSafeArea()
     }
 }
 
@@ -325,6 +346,16 @@ private struct PaperbranchLibraryNodeView: View {
                 .accessibilityIdentifier(selected ? "paperbranch.library.selected-document" : "paperbranch.library.document")
         }
     }
+}
+
+/// The transparent title bar only covers the top of the reader top bar, so the rest of the bar moves the window too.
+private struct PaperbranchWindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> PaperbranchWindowDragView { PaperbranchWindowDragView() }
+    func updateNSView(_ nsView: PaperbranchWindowDragView, context: Context) {}
+}
+
+private final class PaperbranchWindowDragView: NSView {
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
 
 private struct PaperbranchWebView: NSViewRepresentable {
