@@ -267,6 +267,56 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testReturningToReaderAfterAppKitRestoreShowsInjectedWebViewAgain() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-return")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let appKitContent = NSView()
+        window.contentView = appKitContent
+        let webView = WKWebView()
+        // Mirrors DocumentPresentationViewController.restoreDocumentView().
+        let presentation = PaperbranchWindowPresentation(window: window, webView: webView, restoreAppKitContent: {
+            webView.removeFromSuperview()
+            appKitContent.addSubview(webView)
+        })
+        let state = PaperbranchWindowPresentationState(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )
+        XCTAssertTrue(presentation.render(state))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertTrue(windowContainsView(window, target: webView))
+
+        presentation.restoreAppKitPresentation()
+        XCTAssertTrue(webView.superview === appKitContent)
+
+        XCTAssertTrue(presentation.render(state))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertTrue(windowContainsView(window, target: webView))
+        XCTAssertFalse(webView.superview === appKitContent)
+    }
+
+    @MainActor
+    func testLibraryToolbarSidebarItemRoutesThroughLibrarySidebarToggle() throws {
+        let delegate = AppDelegate()
+        let toolbar = NSToolbar(identifier: "PaperbranchToolbarTest-\(UUID().uuidString)")
+        toolbar.delegate = delegate
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
+        window.toolbar = toolbar
+
+        // AppKit's built-in sidebar item toggles the split view directly, bypassing the Library workflow.
+        XCTAssertFalse(toolbar.items.contains { $0.itemIdentifier == .toggleSidebar })
+        let sidebarItem = try XCTUnwrap(toolbar.items.first { $0.label == "Library" })
+        XCTAssertTrue(sidebarItem.target === delegate)
+        XCTAssertEqual(sidebarItem.action, NSSelectorFromString("toggleLibrarySidebar"))
+    }
+
+    @MainActor
     func testExpandedLibraryPresentationShowsNavigationStateAndRoutesOutlineSelection() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-navigation")
         defer { try? FileManager.default.removeItem(at: libraryURL) }

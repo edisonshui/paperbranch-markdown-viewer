@@ -96,11 +96,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         routeFinderOpen(filenames.map(URL.init(fileURLWithPath:)))
     }
 
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleLibrarySidebar, .flexibleSpace, .chooseLibrary] }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleLibrarySidebar, .flexibleSpace, .chooseLibrary] }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: id)
-        if id == .toggleSidebar {
+        if id == .toggleLibrarySidebar {
             item.label = "Library"; item.toolTip = "Show or hide Library"
             item.image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Library")
             item.target = self; item.action = #selector(toggleLibrarySidebar)
@@ -364,4 +364,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 }
 
-private extension NSToolbarItem.Identifier { static let chooseLibrary = NSToolbarItem.Identifier("ChooseLibrary") }
+private extension NSToolbarItem.Identifier {
+    static let chooseLibrary = NSToolbarItem.Identifier("ChooseLibrary")
+    // AppKit builds its own item for the standard `.toggleSidebar` identifier, which bypasses the Library workflow.
+    static let toggleLibrarySidebar = NSToolbarItem.Identifier("ToggleLibrarySidebar")
+}

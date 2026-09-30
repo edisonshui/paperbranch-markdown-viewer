@@ -322,8 +322,25 @@ private struct PaperbranchWebView: NSViewRepresentable {
 /// SwiftUI owns the canvas host while this AppKit view owns the injected WebKit view's layout.
 /// Returning `WKWebView` directly left an already-loaded document accessible but unpainted.
 private final class PaperbranchWebViewCanvas: NSView {
+    private let webView: WKWebView
+
     init(webView: WKWebView) {
+        self.webView = webView
         super.init(frame: .zero)
+        attachWebView()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// SwiftUI reuses this canvas across presentation swaps, while AppKit restoration moves the web view back out.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { attachWebView() }
+    }
+
+    private func attachWebView() {
+        guard webView.superview !== self else { return }
+        webView.removeFromSuperview()
         webView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(webView)
         NSLayoutConstraint.activate([
@@ -333,6 +350,4 @@ private final class PaperbranchWebViewCanvas: NSView {
             webView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
