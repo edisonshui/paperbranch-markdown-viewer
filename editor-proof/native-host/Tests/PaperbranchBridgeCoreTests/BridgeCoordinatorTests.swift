@@ -302,6 +302,33 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryWindowOpensAtDefaultContentSizeWithoutSavedFrame() throws {
+        UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
+        defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
+
+        let window = AppDelegate().makeLibraryWindow()
+        defer { window.setFrameAutosaveName("") }
+
+        XCTAssertEqual(window.contentView?.frame.size, NSSize(width: 960, height: 720))
+    }
+
+    @MainActor
+    func testLibraryWindowSavesItsFrameAndRestoresItAtNextLaunch() throws {
+        UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
+        defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
+        let chosenFrame = NSRect(x: 120, y: 90, width: 1100, height: 700)
+
+        let firstLaunch = AppDelegate().makeLibraryWindow()
+        firstLaunch.setFrame(chosenFrame, display: false)
+        firstLaunch.setFrameAutosaveName("")
+        XCTAssertNotNil(UserDefaults.standard.string(forKey: libraryWindowFrameKey))
+
+        let nextLaunch = AppDelegate().makeLibraryWindow()
+        defer { nextLaunch.setFrameAutosaveName("") }
+        XCTAssertEqual(nextLaunch.frame, chosenFrame)
+    }
+
+    @MainActor
     func testLibraryToolbarSidebarItemRoutesThroughLibrarySidebarToggle() throws {
         let delegate = AppDelegate()
         let toolbar = NSToolbar(identifier: "PaperbranchToolbarTest-\(UUID().uuidString)")
@@ -1368,6 +1395,9 @@ private func accessibilityElement(_ identifier: String, in elements: [NSObject])
 private func accessibilityFrame(of element: NSObject) -> NSRect {
     (element.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue ?? .zero
 }
+
+/// AppKit's user-defaults key for the Library window's frame autosave name.
+private let libraryWindowFrameKey = "NSWindow Frame PaperbranchLibraryWindow"
 
 @MainActor
 private func windowContainsView(_ window: NSWindow, target: NSView) -> Bool {

@@ -53,10 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Paperbranch"
-        window.contentViewController = splitController
-        window.delegate = self
+        window = makeLibraryWindow()
         libraryPresentation = PaperbranchWindowPresentation(
             window: window,
             webView: coordinator.webView,
@@ -65,11 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             restoreAppKitContent: { [weak self] in self?.documentController.restoreDocumentView() },
             onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() }
         )
-        let toolbar = NSToolbar(identifier: "PaperbranchToolbar")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.center()
         window.makeKeyAndOrderFront(nil)
         installMenu()
         coordinator.load(url: HarnessLocation.url)
@@ -83,6 +75,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         libraryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshLibraryIfNeeded() }
         }
+    }
+
+    func makeLibraryWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "Paperbranch"
+        window.contentViewController = splitController
+        window.delegate = self
+        let toolbar = NSToolbar(identifier: "PaperbranchToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        // Assigning the content view controller shrinks the window to the split view's fitting size.
+        window.setContentSize(NSSize(width: 960, height: 720))
+        window.center()
+        window.setFrameAutosaveName("PaperbranchLibraryWindow")
+        window.setFrameUsingName("PaperbranchLibraryWindow")
+        return window
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
