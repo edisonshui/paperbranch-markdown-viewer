@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     private var window: NSWindow!
     private var documentSession: DocumentSession!
+    private var libraryPresentation: PaperbranchWindowPresentation!
     private let sidebarController = LibrarySidebarViewController()
     private var documentController: DocumentPresentationViewController!
     private let splitController = NSSplitViewController()
@@ -16,21 +17,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private var pendingFinderURLs: [URL] = []
     private var isApplicationReady = false
     private var libraryRefreshTimer: Timer?
+    private var documentOutline: [DocumentOutlineEntry] = []
+    private var readingProgress = 0.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
-        documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
+        documentSession.dirtyStateDidChange = { [weak self] _ in
+            self?.updateWindowTitle()
+            self?.refreshWindowPresentation()
+        }
         documentSession.availabilityDidChange = { [weak self] availability in
             self?.documentController.show(availability: availability)
             self?.updateWindowTitle()
+            self?.refreshWindowPresentation()
         }
         documentSession.conflictDidChange = { [weak self] conflict in
             guard let self else { return }
             self.updateWindowTitle()
+            self.refreshWindowPresentation()
             self.presentConflict(conflict, for: self.documentSession, in: self.window)
         }
-        documentSession.navigationStateDidChange = { [weak self] outline, progress in self?.sidebarController.showDocumentNavigation(outline: outline, progress: progress) }
+        documentSession.navigationStateDidChange = { [weak self] outline, progress in
+            guard let self else { return }
+            self.documentOutline = outline
+            self.readingProgress = progress
+            self.sidebarController.showDocumentNavigation(outline: outline, progress: progress)
+            self.refreshWindowPresentation()
+        }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
@@ -43,6 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         window.title = "Paperbranch"
         window.contentViewController = splitController
         window.delegate = self
+        libraryPresentation = PaperbranchWindowPresentation(
+            window: window,
+            webView: coordinator.webView,
+            onSelectDocument: { [weak self] url in self?.routeFinderOpen([url]) },
+            onSelectOutline: { [weak self] id in self?.selectOutline(id) },
+            restoreAppKitContent: { [weak self] in self?.documentController.restoreDocumentView() },
+            onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() }
+        )
         let toolbar = NSToolbar(identifier: "PaperbranchToolbar")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
@@ -129,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
 
     private func routeFinderOpen(_ urls: [URL]) {
         guard isApplicationReady else { pendingFinderURLs.append(contentsOf: urls); return }
+        libraryPresentation.restoreAppKitPresentation()
         Task { [weak self] in guard let self else { return }; do {
             let results = try await finderOpenWorkflow.applicationDidReceiveFinderOpen(urls)
             for result in results {
@@ -148,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         try await documentSession.open(url)
         sidebarController.select(url: url)
         updateWindowTitle()
+        refreshWindowPresentation()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -179,8 +203,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 
     @objc private func toggleLibrarySidebar() {
+        libraryPresentation.restoreAppKitPresentation()
         splitController.splitViewItems.first?.isCollapsed.toggle()
         libraryWorkflow.toggleSidebar()
+        refreshWindowPresentation()
     }
 
     private func restoreLibrary() {
@@ -191,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 if let selected = libraryWorkflow.selectedDocumentURL { routeFinderOpen([selected]) }
             case .unavailable:
                 sidebarController.showUnavailableLibrary()
+                refreshWindowPresentation()
             }
         } catch {
             sidebarController.showUnavailableLibrary()
@@ -207,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             // Library must never discard unsaved Document view edits.
             libraryWorkflow.libraryAccessBecameUnavailable()
             sidebarController.showUnavailableLibrary()
+            refreshWindowPresentation()
         }
     }
 
@@ -214,6 +242,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         guard let library = libraryWorkflow.library else { return }
         sidebarController.show(library, sidebarState: libraryWorkflow.sidebarState, selectedDocumentURL: libraryWorkflow.selectedDocumentURL)
         splitController.splitViewItems.first?.isCollapsed = libraryWorkflow.sidebarState.isCollapsed
+        refreshWindowPresentation()
+    }
+
+    @discardableResult
+    private func refreshWindowPresentation() -> Bool {
+        libraryPresentation.render(.init(
+            library: libraryWorkflow.library,
+            sidebarState: libraryWorkflow.sidebarState,
+            selectedDocumentURL: libraryWorkflow.selectedDocumentURL,
+            document: .init(
+                url: documentSession.fileURL,
+                kind: .library,
+                availability: documentSession.availability,
+                isDirty: documentSession.isDirty,
+                conflict: documentSession.conflict
+            ),
+            outline: documentOutline,
+            readingProgress: readingProgress
+        ))
     }
 
     private func updateWindowTitle() {
