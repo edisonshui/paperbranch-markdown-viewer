@@ -81,30 +81,32 @@ public final class PaperbranchWindowPresentation {
     }
 
     /// Returns whether SwiftUI is visible. An ineligible snapshot restores AppKit before the caller can display that state.
+    /// With no selection, a Library with documents shows an empty reader, while the still-open document's facts must stay clean.
     @discardableResult
     public func render(_ state: PaperbranchWindowPresentationState) -> Bool {
+        let documentURLs = Set(state.library?.root.flattened().compactMap { $0.kind == .document ? $0.url : nil } ?? [])
         guard let library = state.library,
-              let selectedDocumentURL = state.selectedDocumentURL,
               let document = state.document,
               document.kind == .library,
-              document.url == selectedDocumentURL,
+              state.selectedDocumentURL.map { document.url == $0 && documentURLs.contains($0) } ?? !documentURLs.isEmpty,
               document.availability == .available,
               !document.isDirty,
               document.conflict == nil,
               !state.sidebarState.isCollapsed,
-              everyFolderIsExpanded(in: library, sidebarState: state.sidebarState),
-              library.root.flattened().contains(where: { $0.kind == .document && $0.url == selectedDocumentURL })
+              everyFolderIsExpanded(in: library, sidebarState: state.sidebarState)
         else {
             restoreAppKitPresentation()
             return false
         }
 
-        renderedDocumentURLs = Set(library.root.flattened().compactMap { $0.kind == .document ? $0.url : nil })
-        renderedOutlineIDs = Set(state.outline.map(\.id))
+        // The outline belongs to the selected document, so an empty reader drops the previous document's outline.
+        let outline = state.selectedDocumentURL == nil ? [] : state.outline
+        renderedDocumentURLs = documentURLs
+        renderedOutlineIDs = Set(outline.map(\.id))
         hostingView.rootView = AnyView(PaperbranchLibraryWindowView(
             library: library,
-            selectedDocumentURL: selectedDocumentURL,
-            outline: state.outline,
+            selectedDocumentURL: state.selectedDocumentURL,
+            outline: outline,
             readingProgress: state.readingProgress,
             webView: webView,
             selectDocument: selectDocument(at:),
@@ -164,7 +166,7 @@ public final class PaperbranchWindowPresentation {
 
 private struct PaperbranchLibraryWindowView: View {
     let library: LibraryBrowser
-    let selectedDocumentURL: URL
+    let selectedDocumentURL: URL?
     let outline: [DocumentOutlineEntry]
     let readingProgress: Double
     let webView: WKWebView
@@ -229,56 +231,68 @@ private struct PaperbranchLibraryWindowView: View {
                     .accessibilityLabel("Collapse Library sidebar")
                     .accessibilityIdentifier("paperbranch.reader.toggle-sidebar")
                     Spacer()
-                    Text(selectedDocumentURL.lastPathComponent)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(red: 0.67, green: 0.65, blue: 0.61))
-                    Spacer()
-                    Text("Reading")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(red: 0.84, green: 0.82, blue: 0.77))
+                    if let selectedDocumentURL {
+                        Text(selectedDocumentURL.lastPathComponent)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(red: 0.67, green: 0.65, blue: 0.61))
+                        Spacer()
+                        Text("Reading")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(red: 0.84, green: 0.82, blue: 0.77))
+                    }
                 }
                 .frame(height: 66)
                 .frame(maxWidth: 1_120)
                 .padding(.horizontal, 24)
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Reader top bar for \(selectedDocumentURL.lastPathComponent)")
+                .accessibilityLabel(selectedDocumentURL.map { "Reader top bar for \($0.lastPathComponent)" } ?? "Reader top bar")
                 .accessibilityIdentifier("paperbranch.reader.topbar")
 
-                ZStack(alignment: .top) {
-                    Rectangle()
-                        .fill(Color(red: 0.91, green: 0.56, blue: 0.41))
-                        .frame(height: 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .scaleEffect(x: readingProgress, y: 1, anchor: .leading)
-                        .accessibilityRepresentation { ProgressView("Reading progress", value: readingProgress) }
-                        .accessibilityIdentifier("paperbranch.reader.progress")
-                    ZStack {
-                        PaperbranchWebView(webView: webView)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityIdentifier("paperbranch.document.view")
-                    }
-                        .frame(maxWidth: 710)
-                        .padding(.top, 50)
+                if selectedDocumentURL == nil {
+                    Text("Choose a document from the Library")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(red: 0.56, green: 0.55, blue: 0.50))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .accessibilityElement(children: .contain)
-                        .accessibilityLabel("Document canvas")
-                        .accessibilityIdentifier("paperbranch.reader.document-canvas")
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityLabel("Empty reader")
+                        .accessibilityIdentifier("paperbranch.reader.empty")
+                } else {
+                    ZStack(alignment: .top) {
+                        Rectangle()
+                            .fill(Color(red: 0.91, green: 0.56, blue: 0.41))
+                            .frame(height: 2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .scaleEffect(x: readingProgress, y: 1, anchor: .leading)
+                            .accessibilityRepresentation { ProgressView("Reading progress", value: readingProgress) }
+                            .accessibilityIdentifier("paperbranch.reader.progress")
+                        ZStack {
+                            PaperbranchWebView(webView: webView)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .accessibilityIdentifier("paperbranch.document.view")
+                        }
+                            .frame(maxWidth: 710)
+                            .padding(.top, 50)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Document canvas")
+                            .accessibilityIdentifier("paperbranch.reader.document-canvas")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack {
-                    Text("End of document")
-                    Spacer()
-                    Text("Local Markdown")
+                    HStack {
+                        Text("End of document")
+                        Spacer()
+                        Text("Local Markdown")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0.56, green: 0.55, blue: 0.50))
+                    .frame(maxWidth: 710)
+                    .padding(.top, 20)
+                    .padding(.bottom, 28)
+                    .overlay(alignment: .top) { Divider().overlay(Color.white.opacity(0.12)) }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Reader footer")
+                    .accessibilityIdentifier("paperbranch.reader.footer")
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(Color(red: 0.56, green: 0.55, blue: 0.50))
-                .frame(maxWidth: 710)
-                .padding(.top, 20)
-                .padding(.bottom, 28)
-                .overlay(alignment: .top) { Divider().overlay(Color.white.opacity(0.12)) }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Reader footer")
-                .accessibilityIdentifier("paperbranch.reader.footer")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(red: 0.13, green: 0.14, blue: 0.12))
@@ -289,7 +303,7 @@ private struct PaperbranchLibraryWindowView: View {
 
 private struct PaperbranchLibraryNodeView: View {
     let node: LibraryNode
-    let selectedDocumentURL: URL
+    let selectedDocumentURL: URL?
     let depth: Int
     let selectDocument: (URL) -> Void
 
