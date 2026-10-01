@@ -239,6 +239,47 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSidebarWordmarkStaysLightOnTheDarkSidebarUnderALightAppearance() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-wordmark")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        // The sidebar is always dark, so its text must not follow the window's appearance.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        XCTAssertTrue(presentation.render(.init(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )))
+
+        let root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        let wordmark = try XCTUnwrap(accessibilityElement("paperbranch.library.wordmark", in: renderedAccessibilityElements(in: root)))
+        let wordmarkFrame = root.convert(window.convertFromScreen(accessibilityFrame(of: wordmark)), from: nil)
+        XCTAssertFalse(wordmarkFrame.isEmpty)
+
+        // The text starts after the 25-point badge and its 9-point gap.
+        let bitmap = try XCTUnwrap(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+        root.cacheDisplay(in: root.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / root.bounds.width
+        let text = NSRect(x: wordmarkFrame.minX + 34, y: wordmarkFrame.minY, width: wordmarkFrame.width - 34, height: wordmarkFrame.height)
+        var brightest: CGFloat = 0
+        for x in Int(text.minX * scale)..<Int(text.maxX * scale) {
+            for y in Int(text.minY * scale)..<Int(text.maxY * scale) {
+                // Bitmap rows run top to bottom.
+                let row = root.isFlipped ? y : bitmap.pixelsHigh - 1 - y
+                guard let color = bitmap.colorAt(x: x, y: row)?.usingColorSpace(.sRGB) else { continue }
+                brightest = max(brightest, 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent)
+            }
+        }
+        XCTAssertGreaterThan(brightest, 0.8)
+    }
+
+    @MainActor
     func testExpandedLibraryPresentationShowsVariantBReaderChromeAroundInjectedDocumentView() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-reader-chrome")
         defer { try? FileManager.default.removeItem(at: libraryURL) }

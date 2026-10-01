@@ -208,7 +208,11 @@ private struct PaperbranchLibraryWindowView: View {
                             .foregroundStyle(Color(red: 0.10, green: 0.10, blue: 0.09))
                             .frame(width: 25, height: 25)
                             .background(Color(red: 0.91, green: 0.56, blue: 0.41), in: RoundedRectangle(cornerRadius: 7))
-                        Text("Paperbranch").font(.system(size: 14, weight: .semibold))
+                        // The sidebar is dark in every appearance, so the wordmark keeps Variant B's light ink.
+                        Text("Paperbranch")
+                            .font(.system(size: 16, weight: .bold))
+                            .tracking(-0.3)
+                            .foregroundStyle(Color(red: 0.91, green: 0.89, blue: 0.85))
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("paperbranch.library.wordmark")
