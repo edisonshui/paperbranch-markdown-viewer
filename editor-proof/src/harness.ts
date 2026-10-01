@@ -77,6 +77,9 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
 
   baseline = markdown;
   setDirty(false);
+  // Reader chrome ends a formatted document only. A blocked document shows just its notice.
+  const footer = document.getElementById("document-footer");
+  if (footer) footer.hidden = admission.status === "blocked";
 
   if (admission.status === "blocked") {
     blockedSource = markdown;

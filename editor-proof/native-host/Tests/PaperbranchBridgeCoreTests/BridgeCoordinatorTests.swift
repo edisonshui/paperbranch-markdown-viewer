@@ -314,7 +314,8 @@ final class BridgeCoordinatorTests: XCTestCase {
         let sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
         let topBar = try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements))
         let canvas = try XCTUnwrap(accessibilityElement("paperbranch.reader.document-canvas", in: elements))
-        let footer = try XCTUnwrap(accessibilityElement("paperbranch.reader.footer", in: elements))
+        // The Document view ends the article with its own footer, so no SwiftUI footer is pinned to the window.
+        XCTAssertNil(accessibilityElement("paperbranch.reader.footer", in: elements))
         XCTAssertNotEqual(root.accessibilityIdentifier(), "paperbranch.library.sidebar")
         XCTAssertTrue(accessibilityDescendants(of: topBar).contains { $0.value(forKey: "accessibilityValue") as? String == "Reading.md" })
         XCTAssertTrue(accessibilityDescendants(of: canvas).contains { $0 === webView })
@@ -330,7 +331,7 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertLessThan(canvasFrame.width, readerColumn.width)
         XCTAssertEqual(canvasFrame.midX, readerColumn.midX, accuracy: 1)
         XCTAssertGreaterThanOrEqual(accessibilityFrame(of: topBar).minY, canvasFrame.maxY)
-        XCTAssertLessThanOrEqual(accessibilityFrame(of: footer).maxY, canvasFrame.minY)
+        XCTAssertEqual(canvasFrame.minY, rootFrame.minY, accuracy: 1)
 
         XCTAssertTrue(windowContainsView(window, target: webView))
         XCTAssertFalse(appKitDocumentView.constraints.contains { constraint in

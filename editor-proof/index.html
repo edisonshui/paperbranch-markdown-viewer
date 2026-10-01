@@ -8,7 +8,7 @@
       * { box-sizing: border-box; }
       html, body { min-height: 100%; margin: 0; }
       body { background: #22231f; color: #e8e3d8; }
-      #editor-root { max-width: 710px; margin: clamp(50px, 9vh, 110px) auto 120px; padding: 0 24px; }
+      #document { max-width: 710px; margin: clamp(50px, 9vh, 110px) auto 0; padding: 0 24px 120px; }
       .ProseMirror {
         outline: none;
         color: #e8e3d8;
@@ -39,11 +39,19 @@
       .ProseMirror th { color: #aaa79d; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
       .ProseMirror img { max-width: 100%; border-radius: 10px; }
       .ProseMirror img.paperbranch-broken-image { min-width: 180px; min-height: 56px; padding: 16px; border: 1px solid #e88e68; background: #34362f; color: #f0a785; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; }
+      #document-footer {
+        display: flex; justify-content: space-between; margin-top: 70px; padding-top: 20px;
+        border-top: 1px solid rgba(255,255,255,.12); color: #8f8c82; font-size: 12px;
+      }
+      #document-footer[hidden] { display: none; }
       #editor-root[data-admission="blocked"] { color: #f0a785; font: 16px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
     </style>
   </head>
   <body>
-    <div id="editor-root"></div>
+    <article id="document">
+      <div id="editor-root"></div>
+      <footer id="document-footer" hidden><span>End of document</span><span>Local Markdown</span></footer>
+    </article>
     <script type="module" src="/src/harness.ts"></script>
   </body>
 </html>

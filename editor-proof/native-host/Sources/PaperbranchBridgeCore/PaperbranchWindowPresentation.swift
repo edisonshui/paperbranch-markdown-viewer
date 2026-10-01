@@ -317,22 +317,8 @@ private struct PaperbranchLibraryWindowView: View {
                             .accessibilityLabel("Document canvas")
                             .accessibilityIdentifier("paperbranch.reader.document-canvas")
                     }
+                    // The Document view ends the article with its footer, so it scrolls with the document.
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    HStack {
-                        Text("End of document")
-                        Spacer()
-                        Text("Local Markdown")
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color(red: 0.56, green: 0.55, blue: 0.50))
-                    .frame(maxWidth: 710)
-                    .padding(.top, 20)
-                    .padding(.bottom, 28)
-                    .overlay(alignment: .top) { Divider().overlay(Color.white.opacity(0.12)) }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Reader footer")
-                    .accessibilityIdentifier("paperbranch.reader.footer")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
