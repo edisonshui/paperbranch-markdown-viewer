@@ -417,6 +417,21 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Outside\n")
     }
 
+    @MainActor
+    func testStandaloneWindowOpensAtDefaultContentSizeOnScreen() async throws {
+        let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-size")
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let documentURL = folderURL.appendingPathComponent("Outside.md").standardizedFileURL
+        try "# Outside\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let delegate = AppDelegate()
+        try await delegate.openStandaloneDocument(at: documentURL)
+        let window = try XCTUnwrap(delegate.standaloneWindows[documentURL]?.window)
+        defer { window.close() }
+
+        XCTAssertEqual(window.contentView?.frame.size, NSSize(width: 800, height: 640))
+        XCTAssertTrue(NSScreen.screens.contains { $0.visibleFrame.contains(window.frame) }, "Standalone window frame \(window.frame) is not fully on screen")
+    }
+
     private func buttons(in view: NSView) -> [NSButton] {
         ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }
     }

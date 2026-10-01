@@ -22,6 +22,9 @@ final class StandaloneDocumentWindow {
         window.isReleasedWhenClosed = false
         window.delegate = delegate
         window.contentViewController = presentation
+        // Assigning the content view controller shrinks the window to the presentation's detached view.
+        window.setContentSize(NSSize(width: 800, height: 640))
+        window.center()
         coordinator.load(url: HarnessLocation.url)
     }
 
