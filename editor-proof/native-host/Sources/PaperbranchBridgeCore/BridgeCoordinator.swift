@@ -1,7 +1,7 @@
 import WebKit
 
-/// The narrow JS -> native message the bridge accepts. This is the whole
-/// surface the editor can push to native: a boolean dirty flag, never
+/// The narrow JS -> native messages the bridge accepts. The editor can push
+/// dirty state, document-outline entries, and reading progress, but never
 /// document content, a file path, or anything resembling file access. See
 /// docs/specs/paperbranch-implementation.md ("Native and editor boundary").
 public enum BridgeError: Error {
@@ -25,8 +25,8 @@ public protocol BridgeCoordinatorDelegate: AnyObject {
 /// Owns the one `WKWebView` this proof host displays and the fixed message
 /// surface between it and native code:
 ///
-/// - JS -> native: a single message handler, `"paperbranch"`, which only
-///   ever carries `{ type: "dirtyStateChanged", dirty: Bool }`.
+/// - JS -> native: a single `"paperbranch"` message handler carrying either
+///   dirty state or document-navigation state.
 /// - native -> JS: fixed calls into `window.paperbranchNativeBridge` to load
 ///   document content, request serialized Markdown, record a completed save,
 ///   and replace clean external content.
@@ -55,6 +55,7 @@ public final class BridgeCoordinator: NSObject {
         let configuration = configuration ?? WKWebViewConfiguration()
         localImageSchemeHandler = LocalImageSchemeHandler()
         configuration.setURLSchemeHandler(localImageSchemeHandler, forURLScheme: LocalImageSchemeHandler.scheme)
+        configuration.setURLSchemeHandler(OfflineEditorSchemeHandler(), forURLScheme: HarnessLocation.offlineScheme)
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)

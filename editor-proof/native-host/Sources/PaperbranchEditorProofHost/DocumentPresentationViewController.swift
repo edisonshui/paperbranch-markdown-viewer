@@ -48,4 +48,16 @@ final class DocumentPresentationViewController: NSViewController {
     func show(availability: DocumentAvailability) {
         unavailableView.isHidden = availability == .available
     }
+
+    /// Reattaches the injected Document view after SwiftUI temporarily hosts
+    /// it in the existing Library window.
+    func restoreDocumentView() {
+        guard webView.superview !== view else { return }
+        webView.removeFromSuperview()
+        view.addSubview(webView, positioned: .below, relativeTo: unavailableView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor), webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: view.topAnchor), webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+    }
 }

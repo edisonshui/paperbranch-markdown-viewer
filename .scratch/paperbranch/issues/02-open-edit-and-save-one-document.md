@@ -4,10 +4,10 @@
 
 **Blocked by:** 01: Prove formatted Markdown editing.
 
-**Status:** resolved
+**Status:** in-progress
 
 - [x] Paperbranch launches as a native macOS application and can open one `.md` or `.markdown` file through an Open command.
-- [x] The Document view uses the selected editor and follows the reading layout and visual direction of Variant B of the approved prototype.
+- [ ] The Document view uses the selected editor and follows the reading layout and visual direction of Variant B of the approved prototype.
 - [x] The user edits formatted content directly. Paperbranch provides no raw Markdown mode or split view.
 - [x] The window indicates when the document has unsaved edits.
 - [x] Typing does not write to disk, and the original file remains unchanged until the user invokes `Command-S`.
@@ -18,6 +18,8 @@
 - [x] An application-workflow test opens a temporary Markdown file, edits it, proves the file remains unchanged before `Command-S`, saves it, and verifies the resulting file content.
 
 ## Comments
+
+Reopened 2026-09-21 after the complete implementation review found that the current Document view does not yet match Variant B's visual direction.
 
 Verified 2026-09-21:
 

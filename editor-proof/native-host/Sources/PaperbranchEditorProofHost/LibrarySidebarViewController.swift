@@ -12,6 +12,8 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     private var library: LibraryBrowser?
     private let navigationStack = NSStackView()
     private let progressLabel = NSTextField(labelWithString: "Reading progress: 0%")
+    /// Programmatic selection mirrors workflow state and must not route back as a user selection.
+    private var isApplyingSelection = false
 
     override func loadView() {
         let root = NSView()
@@ -79,6 +81,8 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         self.library = library
         statusLabel.isHidden = true
         chooseButton.title = "Choose Library…"
+        isApplyingSelection = true
+        defer { isApplyingSelection = false }
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: false)
         for node in library.root.flattened() where node.kind == .folder && node.url != library.root.url {
@@ -95,6 +99,8 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     }
 
     func select(url: URL?) {
+        isApplyingSelection = true
+        defer { isApplyingSelection = false }
         guard let url else { outlineView.deselectAll(nil); return }
         for row in 0..<outlineView.numberOfRows where (outlineView.item(atRow: row) as? LibraryNode)?.url == url {
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -136,7 +142,7 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
-        guard let node = outlineView.item(atRow: outlineView.selectedRow) as? LibraryNode, node.kind == .document else { return }
+        guard !isApplyingSelection, let node = outlineView.item(atRow: outlineView.selectedRow) as? LibraryNode, node.kind == .document else { return }
         selectDocument?(node.url)
     }
 

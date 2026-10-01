@@ -6,31 +6,45 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
     private var window: NSWindow!
     private var documentSession: DocumentSession!
+    private var libraryPresentation: PaperbranchWindowPresentation!
     private let sidebarController = LibrarySidebarViewController()
     private var documentController: DocumentPresentationViewController!
     private let splitController = NSSplitViewController()
     private let libraryWorkflow = LibraryWorkflow()
     private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
-    private var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
+    private(set) var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
     private var windowsAllowedToClose: Set<NSWindow> = []
     private var pendingFinderURLs: [URL] = []
     private var isApplicationReady = false
     private var libraryRefreshTimer: Timer?
+    private var documentOutline: [DocumentOutlineEntry] = []
+    private var readingProgress = 0.0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
-        documentSession.dirtyStateDidChange = { [weak self] _ in self?.updateWindowTitle() }
+        documentSession.dirtyStateDidChange = { [weak self] _ in
+            self?.updateWindowTitle()
+            self?.refreshWindowPresentation()
+        }
         documentSession.availabilityDidChange = { [weak self] availability in
             self?.documentController.show(availability: availability)
             self?.updateWindowTitle()
+            self?.refreshWindowPresentation()
         }
         documentSession.conflictDidChange = { [weak self] conflict in
             guard let self else { return }
             self.updateWindowTitle()
+            self.refreshWindowPresentation()
             self.presentConflict(conflict, for: self.documentSession, in: self.window)
         }
-        documentSession.navigationStateDidChange = { [weak self] outline, progress in self?.sidebarController.showDocumentNavigation(outline: outline, progress: progress) }
+        documentSession.navigationStateDidChange = { [weak self] outline, progress in
+            guard let self else { return }
+            self.documentOutline = outline
+            self.readingProgress = progress
+            self.sidebarController.showDocumentNavigation(outline: outline, progress: progress)
+            self.refreshWindowPresentation()
+        }
         sidebarController.chooseLibrary = { [weak self] in self?.handleChooseLibrary() }
         sidebarController.selectDocument = { [weak self] url in self?.routeFinderOpen([url]) }
         sidebarController.folderExpansionChanged = { [weak self] node, expanded in self?.libraryWorkflow.setFolder(node, expanded: expanded) }
@@ -39,15 +53,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         splitController.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebarController))
         splitController.addSplitViewItem(NSSplitViewItem(viewController: documentController))
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Paperbranch"
-        window.contentViewController = splitController
-        window.delegate = self
-        let toolbar = NSToolbar(identifier: "PaperbranchToolbar")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.center()
+        window = makeLibraryWindow()
+        libraryPresentation = PaperbranchWindowPresentation(
+            window: window,
+            webView: coordinator.webView,
+            onSelectDocument: { [weak self] url in self?.routeFinderOpen([url]) },
+            onSelectOutline: { [weak self] id in self?.selectOutline(id) },
+            restoreAppKitContent: { [weak self] in self?.documentController.restoreDocumentView() },
+            onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() },
+            onOpen: { [weak self] in self?.handleOpen() }
+        )
         window.makeKeyAndOrderFront(nil)
         installMenu()
         coordinator.load(url: HarnessLocation.url)
@@ -63,6 +78,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         }
     }
 
+    func makeLibraryWindow() -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window.title = "Paperbranch"
+        // Keeps the AppKit fallback states consistent with Variant B's dark reader.
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentViewController = splitController
+        window.delegate = self
+        let toolbar = NSToolbar(identifier: "PaperbranchToolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        // Assigning the content view controller shrinks the window to the split view's fitting size.
+        window.setContentSize(NSSize(width: 960, height: 720))
+        window.center()
+        window.setFrameAutosaveName("PaperbranchLibraryWindow")
+        window.setFrameUsingName("PaperbranchLibraryWindow")
+        return window
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
@@ -74,11 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         routeFinderOpen(filenames.map(URL.init(fileURLWithPath:)))
     }
 
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .flexibleSpace, .chooseLibrary] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleLibrarySidebar, .flexibleSpace, .chooseLibrary] }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleLibrarySidebar, .flexibleSpace, .chooseLibrary] }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         let item = NSToolbarItem(itemIdentifier: id)
-        if id == .toggleSidebar {
+        if id == .toggleLibrarySidebar {
             item.label = "Library"; item.toolTip = "Show or hide Library"
             item.image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Library")
             item.target = self; item.action = #selector(toggleLibrarySidebar)
@@ -129,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
 
     private func routeFinderOpen(_ urls: [URL]) {
         guard isApplicationReady else { pendingFinderURLs.append(contentsOf: urls); return }
+        libraryPresentation.restoreAppKitPresentation()
         Task { [weak self] in guard let self else { return }; do {
             let results = try await finderOpenWorkflow.applicationDidReceiveFinderOpen(urls)
             for result in results {
@@ -148,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         try await documentSession.open(url)
         sidebarController.select(url: url)
         updateWindowTitle()
+        refreshWindowPresentation()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -155,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         Task { [weak self] in _ = try? await self?.documentSession.coordinator.selectOutline(id: id) }
     }
 
-    private func openStandaloneDocument(at url: URL) async throws {
+    func openStandaloneDocument(at url: URL) async throws {
         let standalone = StandaloneDocumentWindow(delegate: self)
         standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
         standalone.session.availabilityDidChange = { [weak standalone] availability in
@@ -179,8 +215,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 
     @objc private func toggleLibrarySidebar() {
+        libraryPresentation.restoreAppKitPresentation()
         splitController.splitViewItems.first?.isCollapsed.toggle()
         libraryWorkflow.toggleSidebar()
+        refreshWindowPresentation()
     }
 
     private func restoreLibrary() {
@@ -191,6 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 if let selected = libraryWorkflow.selectedDocumentURL { routeFinderOpen([selected]) }
             case .unavailable:
                 sidebarController.showUnavailableLibrary()
+                refreshWindowPresentation()
             }
         } catch {
             sidebarController.showUnavailableLibrary()
@@ -207,6 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             // Library must never discard unsaved Document view edits.
             libraryWorkflow.libraryAccessBecameUnavailable()
             sidebarController.showUnavailableLibrary()
+            refreshWindowPresentation()
         }
     }
 
@@ -214,6 +254,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         guard let library = libraryWorkflow.library else { return }
         sidebarController.show(library, sidebarState: libraryWorkflow.sidebarState, selectedDocumentURL: libraryWorkflow.selectedDocumentURL)
         splitController.splitViewItems.first?.isCollapsed = libraryWorkflow.sidebarState.isCollapsed
+        refreshWindowPresentation()
+    }
+
+    @discardableResult
+    private func refreshWindowPresentation() -> Bool {
+        libraryPresentation.render(.init(
+            library: libraryWorkflow.library,
+            sidebarState: libraryWorkflow.sidebarState,
+            selectedDocumentURL: libraryWorkflow.selectedDocumentURL,
+            document: .init(
+                url: documentSession.fileURL,
+                kind: .library,
+                availability: documentSession.availability,
+                isDirty: documentSession.isDirty,
+                conflict: documentSession.conflict
+            ),
+            outline: documentOutline,
+            readingProgress: readingProgress
+        ))
     }
 
     private func updateWindowTitle() {
@@ -292,7 +351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
         alert.beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
         case .alertFirstButtonReturn: save(session, in: sender) { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) }
-        case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); sender.performClose(nil)
+        // The alert sheet is still attached inside this handler, and AppKit ignores a close then.
+        case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); DispatchQueue.main.async { sender.performClose(nil) }
         default: break
         } }
         return false
@@ -317,4 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     }
 }
 
-private extension NSToolbarItem.Identifier { static let chooseLibrary = NSToolbarItem.Identifier("ChooseLibrary") }
+private extension NSToolbarItem.Identifier {
+    static let chooseLibrary = NSToolbarItem.Identifier("ChooseLibrary")
+    // AppKit builds its own item for the standard `.toggleSidebar` identifier, which bypasses the Library workflow.
+    static let toggleLibrarySidebar = NSToolbarItem.Identifier("ToggleLibrarySidebar")
+}
