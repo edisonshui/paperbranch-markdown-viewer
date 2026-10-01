@@ -1152,6 +1152,29 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testDocumentMetaLineFollowsAnExternalReload() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-document-meta")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("observed.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        let metaLine = "Array.from(document.querySelectorAll('#document-meta span'), (item) => item.textContent).join(' · ')"
+        let opened = try await coordinator.webView.evaluateJavaScript(metaLine) as? String
+        XCTAssertEqual(opened, "1 word · 1 min read")
+
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: false, encoding: .utf8)
+
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Changed outside Paperbranch")
+        XCTAssertTrue(reloaded)
+        let afterReload = try await coordinator.webView.evaluateJavaScript(metaLine) as? String
+        XCTAssertEqual(afterReload, "3 words · 1 min read")
+    }
+
+    @MainActor
     func testCleanDocumentReloadsAfterAtomicReplacement() async throws {
         let directory = try makeTemporaryDirectory(named: "paperbranch-atomic-replacement")
         defer { try? FileManager.default.removeItem(at: directory) }

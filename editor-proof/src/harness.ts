@@ -1,4 +1,5 @@
-import { Editor, rootCtx, defaultValueCtx } from "@milkdown/kit/core";
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from "@milkdown/kit/core";
+import type { Ctx } from "@milkdown/kit/ctx";
 import { commonmark } from "@milkdown/kit/preset/commonmark";
 import { gfm } from "@milkdown/kit/preset/gfm";
 import { getMarkdown } from "@milkdown/kit/utils";
@@ -77,9 +78,11 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
 
   baseline = markdown;
   setDirty(false);
-  // Reader chrome ends a formatted document only. A blocked document shows just its notice.
-  const footer = document.getElementById("document-footer");
-  if (footer) footer.hidden = admission.status === "blocked";
+  // Reader chrome frames a formatted document only. A blocked document shows just its notice.
+  for (const id of ["document-meta", "document-footer"]) {
+    const chrome = document.getElementById(id);
+    if (chrome) chrome.hidden = admission.status === "blocked";
+  }
 
   if (admission.status === "blocked") {
     blockedSource = markdown;
@@ -95,9 +98,10 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
     .config((ctx) => {
       ctx.set(rootCtx, root);
       ctx.set(defaultValueCtx, markdown);
-      ctx.get(listenerCtx).markdownUpdated((_ctx, current) => {
+      ctx.get(listenerCtx).markdownUpdated((ctx, current) => {
         setDirty(current !== baseline);
         reportNavigation();
+        showDocumentStats(ctx);
       });
     })
     .use(commonmark)
@@ -107,12 +111,25 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
     .use(listener)
     .create();
 
+  editor.action(showDocumentStats);
   configureLocalImages();
   imageObserver.disconnect();
   imageObserver.observe(root, { childList: true, subtree: true });
   reportNavigation();
 
   return admission;
+}
+
+// Counts the words a reader sees, so link targets and Markdown syntax do not count. Variant B reads 220 words a minute.
+function showDocumentStats(ctx: Ctx): void {
+  const meta = document.getElementById("document-meta");
+  if (!meta) return;
+  const { doc } = ctx.get(editorViewCtx).state;
+  const text = doc.textBetween(0, doc.content.size, " ", " ").trim();
+  const words = text ? text.split(/\s+/).length : 0;
+  const minutes = Math.max(1, Math.ceil(words / 220));
+  const item = (label: string) => Object.assign(document.createElement("span"), { textContent: label });
+  meta.replaceChildren(item(`${words} ${words === 1 ? "word" : "words"}`), item(`${minutes} min read`));
 }
 
 function getMarkdownContent(): string {
