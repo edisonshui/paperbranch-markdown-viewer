@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private let splitController = NSSplitViewController()
     private let libraryWorkflow = LibraryWorkflow()
     private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
-    private var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
+    private(set) var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
     private var windowsAllowedToClose: Set<NSWindow> = []
     private var pendingFinderURLs: [URL] = []
     private var isApplicationReady = false
@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         Task { [weak self] in _ = try? await self?.documentSession.coordinator.selectOutline(id: id) }
     }
 
-    private func openStandaloneDocument(at url: URL) async throws {
+    func openStandaloneDocument(at url: URL) async throws {
         let standalone = StandaloneDocumentWindow(delegate: self)
         standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
         standalone.session.availabilityDidChange = { [weak standalone] availability in
@@ -351,7 +351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
         alert.beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
         case .alertFirstButtonReturn: save(session, in: sender) { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) }
-        case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); sender.performClose(nil)
+        // The alert sheet is still attached inside this handler, and AppKit ignores a close then.
+        case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); DispatchQueue.main.async { sender.performClose(nil) }
         default: break
         } }
         return false

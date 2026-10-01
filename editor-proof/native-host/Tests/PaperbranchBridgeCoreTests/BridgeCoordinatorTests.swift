@@ -393,6 +393,35 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testDiscardInCloseAlertClosesDirtyStandaloneWindow() async throws {
+        let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-discard")
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let documentURL = folderURL.appendingPathComponent("Outside.md").standardizedFileURL
+        try "# Outside\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let delegate = AppDelegate()
+        try await delegate.openStandaloneDocument(at: documentURL)
+        let standalone = try XCTUnwrap(delegate.standaloneWindows[documentURL])
+        try await insertExclamationMark(in: standalone.coordinator)
+        for _ in 0..<40 where !standalone.session.isDirty { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(standalone.session.isDirty)
+
+        standalone.window.performClose(nil)
+        for _ in 0..<40 where standalone.window.attachedSheet == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        let sheet = try XCTUnwrap(standalone.window.attachedSheet, "Closing a dirty window did not show the close alert")
+        let discard = try XCTUnwrap(sheet.contentView.flatMap { buttons(in: $0) }?.first { $0.title == "Discard" })
+        discard.performClick(nil)
+        for _ in 0..<40 where standalone.window.isVisible { try await Task.sleep(nanoseconds: 50_000_000) }
+
+        XCTAssertFalse(standalone.window.isVisible, "Discard left the Standalone window open")
+        XCTAssertNil(delegate.standaloneWindows[documentURL], "windowWillClose did not run for the discarded window")
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Outside\n")
+    }
+
+    private func buttons(in view: NSView) -> [NSButton] {
+        ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }
+    }
+
+    @MainActor
     func testLibraryWindowOpensAtDefaultContentSizeWithoutSavedFrame() throws {
         UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
         defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
