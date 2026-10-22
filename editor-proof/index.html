@@ -4,64 +4,74 @@
     <meta charset="utf-8" />
     <title>Paperbranch</title>
     <style>
-      :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+      /* Every value is a token from the design skill's tokens.css, which src/harness.ts imports (Ticket 39).
+         The page follows the macOS appearance through tokens.css's color-scheme (Ticket 40). */
       * { box-sizing: border-box; }
-      html, body { min-height: 100%; margin: 0; }
-      body { background: #22231f; color: #e8e3d8; }
-      #document { max-width: 710px; margin: clamp(50px, 9vh, 110px) auto 0; padding: 0 24px 120px; }
-      .ProseMirror {
-        outline: none;
-        color: #e8e3d8;
-        font: 19px/1.82 ui-serif, "New York", Charter, Georgia, serif;
-        overflow-wrap: anywhere;
+      html, body { min-height: 100%; }
+      body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); }
+      ::selection { background: var(--selection); }
+
+      #document { max-width: calc(var(--measure) + 2 * var(--space-5)); margin: var(--space-7) auto 0; padding: 0 var(--space-5) var(--space-8); }
+      #document-meta {
+        margin-bottom: var(--space-3);
+        font: var(--weight-semibold) var(--text-label) / var(--leading-ui) var(--font-ui);
+        letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--ink-muted);
       }
+      /* "1,240 words · 6 min read", as in the guideline's mockups. */
+      #document-meta span + span::before { content: " · "; }
+      #document-meta[hidden], #document-footer[hidden] { display: none; }
+
+      .ProseMirror { outline: none; font: var(--text-body) / var(--leading-body) var(--font-reading); color: var(--ink); overflow-wrap: anywhere; }
       .ProseMirror > :first-child { margin-top: 0; }
       .ProseMirror h1, .ProseMirror h2, .ProseMirror h3, .ProseMirror h4 {
-        color: #fffaf0; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        letter-spacing: -.025em; line-height: 1.18;
+        font-family: var(--font-ui); font-weight: var(--weight-bold);
+        letter-spacing: var(--tracking-heading); line-height: var(--leading-heading); color: var(--ink-strong);
       }
-      .ProseMirror h1 { margin: 0 0 .9em; text-align: center; font-size: clamp(42px, 7vw, 66px); }
-      .ProseMirror h2 { margin: 2.1em 0 .7em; font-size: 26px; }
-      .ProseMirror h3 { margin: 1.7em 0 .6em; font-size: 20px; }
-      .ProseMirror h4 { margin: 1.5em 0 .5em; font-size: 17px; }
-      .ProseMirror p { margin: 0 0 1.2em; }
-      .ProseMirror a { color: #ef9b78; text-underline-offset: 3px; }
-      .ProseMirror em, .ProseMirror del { color: #c6c1b6; }
-      .ProseMirror blockquote { margin: 1.8em 0; padding: .3em 0 .3em 1.25em; border-left: 3px solid #e88e68; color: #c8c3b8; font-style: italic; }
-      .ProseMirror ul, .ProseMirror ol { margin: 0 0 1.3em; padding-left: 1.35em; }
-      .ProseMirror li { margin: .35em 0; padding-left: .2em; }
-      .ProseMirror code { padding: .16em .38em; border-radius: 5px; background: #34362f; color: #f0a785; font: .84em "SFMono-Regular", Consolas, monospace; }
-      .ProseMirror pre { margin: 1.7em 0; padding: 20px 22px; overflow: auto; border-radius: 13px; background: #272924; }
-      .ProseMirror pre code { padding: 0; background: transparent; color: #eceadf; font-size: 13px; line-height: 1.65; }
-      .ProseMirror hr { margin: 2.4em 0; border: 0; border-top: 1px solid rgba(255,255,255,.13); }
-      .ProseMirror table { width: 100%; margin: 1.6em 0; border-collapse: collapse; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; }
-      .ProseMirror th, .ProseMirror td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.13); text-align: left; }
-      .ProseMirror th { color: #aaa79d; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
-      .ProseMirror img { max-width: 100%; border-radius: 10px; }
-      .ProseMirror img.paperbranch-broken-image { min-width: 180px; min-height: 56px; padding: 16px; border: 1px solid #e88e68; background: #34362f; color: #f0a785; font: 14px -apple-system, BlinkMacSystemFont, sans-serif; }
-      #document-meta { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 18px; margin-bottom: 54px; color: #8f8c82; font-size: 12px; }
+      .ProseMirror h1 { margin: 0 0 var(--space-5); font-size: var(--text-h1); }
+      .ProseMirror h2 { margin: var(--space-7) 0 var(--space-3); font-size: var(--text-h2); }
+      .ProseMirror h3 { margin: var(--space-6) 0 var(--space-3); font-size: var(--text-h3); }
+      .ProseMirror h4 { margin: var(--space-5) 0 var(--space-2); font-size: var(--text-h4); }
+      .ProseMirror p { margin: 0 0 var(--space-4); }
+      .ProseMirror a { color: var(--accent-text); text-underline-offset: 3px; }
+      .ProseMirror blockquote { margin: var(--space-5) 0; padding-left: var(--space-4); border-left: 2px solid var(--border); font-style: italic; color: var(--ink-muted); }
+      .ProseMirror ul, .ProseMirror ol { margin: 0 0 var(--space-4); padding-left: 1.35em; }
+      .ProseMirror li { margin: var(--space-1) 0; }
+      .ProseMirror code { padding: 0.12em 0.36em; border-radius: var(--radius-s); background: var(--code-bg); color: var(--accent-text); font: 0.84em var(--font-mono); }
+      .ProseMirror pre { margin: var(--space-5) 0; padding: var(--space-4) var(--space-5); overflow: auto; border-radius: var(--radius-l); background: var(--code-bg); }
+      .ProseMirror pre code { padding: 0; background: transparent; color: var(--ink); font-size: var(--text-code); line-height: var(--leading-body); }
+      .ProseMirror hr { margin: var(--space-7) 0; border: 0; border-top: 1px solid var(--rule); }
+      .ProseMirror table { width: 100%; margin: var(--space-5) 0; border-collapse: collapse; font: var(--text-ui) var(--font-ui); }
+      .ProseMirror th, .ProseMirror td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--rule); text-align: left; }
+      .ProseMirror th { color: var(--ink-muted); font-size: var(--text-caption); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+      .ProseMirror img { max-width: 100%; border-radius: var(--radius-l); }
+      .ProseMirror img.paperbranch-broken-image {
+        min-width: 180px; min-height: 56px; padding: var(--space-4);
+        border: 1px solid var(--danger); background: var(--code-bg); color: var(--danger); font: var(--text-ui) var(--font-ui);
+      }
+
       #document-footer {
-        display: flex; justify-content: space-between; margin-top: 70px; padding-top: 20px;
-        border-top: 1px solid rgba(255,255,255,.12); color: #8f8c82; font-size: 12px;
+        display: flex; justify-content: space-between; margin-top: var(--space-8); padding-top: var(--space-5);
+        border-top: 1px solid var(--rule); color: var(--ink-muted); font: var(--text-caption) var(--font-ui);
       }
-      #document-meta[hidden], #document-footer[hidden] { display: none; }
-      /* Formatting popover (Ticket 36). Dark values from the brand tokens --surface, --border, --ink, --selection, --accent-text, --radius-l, --radius-s, --shadow-popover. */
+      #editor-root[data-admission="blocked"] { color: var(--danger); font: var(--text-ui-large) / var(--leading-ui) var(--font-ui); }
+
+      /* Formatting popover (Tickets 36 and 38). Appended to the body and absolutely placed, so it reflows nothing. */
       #formatting-popover {
         position: absolute; top: 0; left: 0; z-index: 10; display: flex; gap: 2px; padding: 3px;
-        background: #26262A; border: 1px solid #3A3A40; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.45);
-        opacity: 0; visibility: hidden; transition: opacity 120ms ease, visibility 0s linear 120ms;
+        background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-l);
+        box-shadow: var(--shadow-popover);
+        opacity: 0; visibility: hidden; transition: opacity var(--duration-fast) var(--ease), visibility 0s var(--duration-fast);
       }
-      #formatting-popover[data-show="true"] { opacity: 1; visibility: visible; transition: opacity 120ms ease, visibility 0s; }
+      #formatting-popover[data-show="true"] { opacity: 1; visibility: visible; transition: opacity var(--duration-fast) var(--ease), visibility 0s; }
       #formatting-popover button {
-        display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 4px;
-        background: transparent; color: #E6E6E8; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; cursor: default;
+        width: 28px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0;
+        border: 0; border-radius: var(--radius-s); background: transparent; color: var(--ink); font: var(--text-ui) var(--font-ui); cursor: default;
       }
-      #formatting-popover button[aria-pressed="true"] { background: #24385E; color: #7EA7F5; }
-      #formatting-popover .bold { font-weight: 700; }
-      #formatting-popover .italic { font-family: ui-serif, "New York", Georgia, serif; font-style: italic; }
+      #formatting-popover button svg { width: 16px; height: 16px; }
+      #formatting-popover button[aria-pressed="true"] { background: var(--selection); color: var(--accent-text); }
+      #formatting-popover .bold { font-weight: var(--weight-bold); }
+      #formatting-popover .italic { font-family: var(--font-reading); font-style: italic; }
       #formatting-popover .strike { text-decoration: line-through; }
-      @media (prefers-reduced-motion: reduce) { #formatting-popover, #formatting-popover[data-show="true"] { transition: none; } }
-      #editor-root[data-admission="blocked"] { color: #f0a785; font: 16px/1.6 -apple-system, BlinkMacSystemFont, sans-serif; }
     </style>
   </head>
   <body>

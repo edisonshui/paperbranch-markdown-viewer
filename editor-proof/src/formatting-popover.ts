@@ -16,15 +16,14 @@ import { strikethroughSchema, toggleStrikethroughCommand } from "@milkdown/kit/p
 import type { MarkType } from "@milkdown/kit/prose/model";
 import { TextSelection, type EditorState, type Selection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
+// The design skill's icon files, drawn with currentColor so the active state can tint them.
+import linkIcon from "../../.claude/skills/paperbranch-design/icons/link.svg?raw";
+import codeIcon from "../../.claude/skills/paperbranch-design/icons/code.svg?raw";
 
 // Ticket 36: selecting text shows a small popover that toggles link, bold, italic, strikethrough, and inline code.
 // Milkdown's tooltip plugin positions it with floating-ui and already hides it for an empty selection,
 // an unfocused editor, and a read-only view. A blocked document never creates an editor, so it never shows.
 export const formattingPopover = tooltipFactory("FORMATTING_POPOVER");
-
-const stroke = 'fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
-const linkIcon = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" ${stroke}><path d="M6.5 9.5l3-3"/><path d="M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2"/><path d="M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8"/></svg>`;
-const codeIcon = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" ${stroke}><path d="M5.5 4.5L2 8l3.5 3.5"/><path d="M10.5 4.5L14 8l-3.5 3.5"/></svg>`;
 
 type Format = { label: string; face: string; className: string; mark: (ctx: Ctx) => MarkType; run: (ctx: Ctx, view: EditorView) => void };
 

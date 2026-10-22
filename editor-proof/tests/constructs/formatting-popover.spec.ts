@@ -90,15 +90,21 @@ for (const { label, markdown, element } of [
   });
 }
 
-test("an active button fills with --selection and draws its glyph in --accent-text", async ({ page }) => {
-  await load(page, "# Note\n\nOne **two** three.\n");
-  await selectWord(page, "two");
-  const colors = (label: string) => button(page, label).evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]);
-  await expect(button(page, "Bold")).toHaveAttribute("aria-pressed", "true");
-  // Dark values of --selection (#24385E) and --accent-text (#7EA7F5), 4.85:1.
-  expect(await colors("Bold")).toEqual(["rgb(36, 56, 94)", "rgb(126, 167, 245)"]);
-  expect(await colors("Italic")).toEqual(["rgba(0, 0, 0, 0)", "rgb(230, 230, 232)"]);
-});
+for (const [scheme, surface, selection, accentText, ink] of [
+  ["dark", "rgb(38, 38, 42)", "rgb(36, 56, 94)", "rgb(126, 167, 245)", "rgb(230, 230, 232)"],
+  ["light", "rgb(255, 255, 255)", "rgb(220, 231, 253)", "rgb(29, 78, 216)", "rgb(29, 29, 31)"],
+] as const) {
+  test(`an active button fills with --selection and draws its glyph in --accent-text (${scheme})`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await load(page, "# Note\n\nOne **two** three.\n");
+    await selectWord(page, "two");
+    const colors = (label: string) => button(page, label).evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]);
+    await expect(button(page, "Bold")).toHaveAttribute("aria-pressed", "true");
+    expect(await popover(page).evaluate((p) => getComputedStyle(p).backgroundColor)).toBe(surface);
+    expect(await colors("Bold")).toEqual([selection, accentText]);
+    expect(await colors("Italic")).toEqual(["rgba(0, 0, 0, 0)", ink]);
+  });
+}
 
 test("Link asks for a URL to add a link, and removes an existing link without asking", async ({ page }) => {
   await load(page);
