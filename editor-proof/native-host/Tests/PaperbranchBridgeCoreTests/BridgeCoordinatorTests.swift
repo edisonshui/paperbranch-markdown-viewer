@@ -647,8 +647,34 @@ final class BridgeCoordinatorTests: XCTestCase {
         try await makeDirty()
         try "# A changed elsewhere\n".write(to: a, atomically: true, encoding: .utf8)
         _ = try await answerSheet("Keep Editing")
+        // Escape also cancels the overwrite and writes nothing.
         _ = try await switchTo(b, answering: "Save")
-        _ = try await answerSheet("Cancel")
+        try await waitFor { window.attachedSheet != nil }
+        let escapeSheet = try XCTUnwrap(window.attachedSheet)
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: escapeSheet.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        // The test runner has no event loop to deliver queued events to the monitor, so it calls the monitor's logic.
+        XCTAssertTrue(AppDelegate.cancelOnEscape(escape, in: escapeSheet))
+        try await waitFor { window.attachedSheet !== escapeSheet }
+        XCTAssertFalse(window.attachedSheet === escapeSheet, "Escape did not dismiss the overwrite warning")
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+
+        // Return answers the default button, Cancel, and writes nothing.
+        _ = try await switchTo(b, answering: "Save")
+        try await waitFor { window.attachedSheet != nil }
+        let returnSheet = try XCTUnwrap(window.attachedSheet)
+        let returnKey = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: returnSheet.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        XCTAssertTrue(returnSheet.performKeyEquivalent(with: returnKey), "No button took Return")
+        try await waitFor { window.attachedSheet !== returnSheet }
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+        _ = try await switchTo(b, answering: "Save")
+        let overwriteAlert = try await answerSheet("Cancel")
+        // Return answers Cancel, so it writes nothing, and Overwrite is marked destructive (design skill, "Overwrite warning").
+        let overwriteButtons = try XCTUnwrap(overwriteAlert.contentView.flatMap { buttons(in: $0) }).filter { !$0.title.isEmpty }
+        XCTAssertEqual(overwriteButtons.first { $0.keyEquivalent == "\r" }?.title, "Cancel")
+        XCTAssertEqual(overwriteButtons.map(\.title), ["Cancel", "Overwrite"])
+        XCTAssertEqual(overwriteButtons.first { $0.title == "Overwrite" }?.hasDestructiveAction, true)
         try await assertStaysOn(a)
         XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
         _ = try await switchTo(b, answering: "Save")

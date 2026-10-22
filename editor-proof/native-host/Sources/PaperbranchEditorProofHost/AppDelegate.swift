@@ -438,12 +438,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         let alert = NSAlert()
         alert.messageText = "Overwrite newer disk version of \(session.fileURL?.lastPathComponent ?? "this document")?"
         alert.informativeText = "Paperbranch will replace the version changed outside the app with your in-memory edits."
-        alert.addButton(withTitle: "Overwrite")
-        alert.addButton(withTitle: "Cancel")
+        // Cancel is the default, so Return writes nothing. Overwrite is second and marked destructive.
+        // AppKit gives a button titled Cancel the Escape key and leaves Return unassigned. Return is set below, which
+        // takes Escape away from it, so a monitor routes Escape to Cancel while this alert is up.
+        let cancel = alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Overwrite").hasDestructiveAction = true
+        let escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak alert] event in
+            nonisolated(unsafe) let event = event
+            let cancelled = MainActor.assumeIsolated { alert.map { Self.cancelOnEscape(event, in: $0.window) } ?? false }
+            return cancelled ? nil : event
+        }
         alert.beginSheetModal(for: owner) { [weak self] response in
-            guard response == .alertFirstButtonReturn, let self else { return afterCancel() }
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            guard response == .alertSecondButtonReturn, let self else { return afterCancel() }
             Task { do { try await session.save(overwritingExternalChanges: true); self.updateTitle(for: session); afterOverwrite() } catch { self.presentError(error, for: session.fileURL); afterCancel() } }
         }
+        // AppKit settles the buttons' key equivalents when the sheet appears, which cleared one set any earlier.
+        cancel.keyEquivalent = "\r"
+    }
+
+    /// Presses an alert's Cancel button for an Escape key aimed at that alert's window.
+    static func cancelOnEscape(_ event: NSEvent, in alertWindow: NSWindow) -> Bool {
+        guard event.type == .keyDown, event.keyCode == 53, event.windowNumber == alertWindow.windowNumber,
+              let cancel = alertWindow.contentView.flatMap({ firstButton(titled: "Cancel", in: $0) }) else { return false }
+        cancel.performClick(nil)
+        return true
+    }
+
+    private static func firstButton(titled title: String, in view: NSView) -> NSButton? {
+        if let button = view as? NSButton, button.title == title { return button }
+        return view.subviews.lazy.compactMap { firstButton(titled: title, in: $0) }.first
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
