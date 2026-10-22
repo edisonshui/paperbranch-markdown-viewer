@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 import XCTest
 
@@ -188,7 +189,9 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
             XCTAssertTrue(window.titlebarAppearsTransparent)
             XCTAssertEqual(window.titleVisibility, .hidden)
-            XCTAssertFalse(toolbar.isVisible)
+            // An empty unified toolbar replaces the AppKit one, so the window buttons center in the top bar.
+            XCTAssertFalse(window.toolbar === toolbar)
+            XCTAssertTrue(window.toolbar?.items.isEmpty ?? false)
             XCTAssertEqual(window.title, "Reading.md")
             let root = try XCTUnwrap(window.contentView)
             XCTAssertEqual(root.frame.size, window.frame.size)
@@ -212,6 +215,7 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
             XCTAssertFalse(window.titlebarAppearsTransparent)
             XCTAssertEqual(window.titleVisibility, .visible)
+            XCTAssertTrue(window.toolbar === toolbar)
             XCTAssertTrue(toolbar.isVisible)
             XCTAssertEqual(window.title, "Reading.md")
             XCTAssertEqual(window.frame, chosenFrame)
@@ -285,44 +289,73 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testSidebarWordmarkStaysLightOnTheDarkSidebarUnderALightAppearance() throws {
-        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-wordmark")
+    func testLibraryChromeFollowsTheAppearanceWithTokenColors() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-appearance")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
         let documentURL = libraryURL.appendingPathComponent("Reading.md")
         try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
 
-        // The sidebar is always dark, so its text must not follow the window's appearance.
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .aqua)
-        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
-        XCTAssertTrue(presentation.render(.init(
-            library: try LibraryBrowser.choose(libraryURL),
-            sidebarState: LibrarySidebarState(),
-            selectedDocumentURL: documentURL,
-            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
-        )))
-
-        let root = try XCTUnwrap(window.contentView)
-        root.layoutSubtreeIfNeeded()
-        let wordmark = try XCTUnwrap(accessibilityElement("paperbranch.library.wordmark", in: renderedAccessibilityElements(in: root)))
-        let wordmarkFrame = root.convert(window.convertFromScreen(accessibilityFrame(of: wordmark)), from: nil)
-        XCTAssertFalse(wordmarkFrame.isEmpty)
-
-        // The text starts after the 25-point badge and its 9-point gap.
-        let bitmap = try XCTUnwrap(root.bitmapImageRepForCachingDisplay(in: root.bounds))
-        root.cacheDisplay(in: root.bounds, to: bitmap)
-        let scale = CGFloat(bitmap.pixelsWide) / root.bounds.width
-        let text = NSRect(x: wordmarkFrame.minX + 34, y: wordmarkFrame.minY, width: wordmarkFrame.width - 34, height: wordmarkFrame.height)
-        var brightest: CGFloat = 0
-        for x in Int(text.minX * scale)..<Int(text.maxX * scale) {
-            for y in Int(text.minY * scale)..<Int(text.maxY * scale) {
-                // Bitmap rows run top to bottom.
-                let row = root.isFlipped ? y : bitmap.pixelsHigh - 1 - y
-                guard let color = bitmap.colorAt(x: x, y: row)?.usingColorSpace(.sRGB) else { continue }
-                brightest = max(brightest, 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent)
+        // Ticket 41: the sidebar and wordmark follow the window's appearance with the design tokens.
+        for (appearance, wordmarkIsLight) in [(NSAppearance.Name.aqua, false), (.darkAqua, true)] {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+            XCTAssertTrue(presentation.render(.init(
+                library: library,
+                sidebarState: LibrarySidebarState(),
+                selectedDocumentURL: documentURL,
+                document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+            )))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+            root.cacheDisplay(in: root.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / root.bounds.width
+            func pixel(_ point: NSPoint) -> NSColor? {
+                let row = root.isFlipped ? Int(point.y * scale) : bitmap.pixelsHigh - 1 - Int(point.y * scale)
+                return bitmap.colorAt(x: Int(point.x * scale), y: row)?.usingColorSpace(.sRGB)
             }
+            func hex(_ color: NSColor?) -> String {
+                guard let color else { return "none" }
+                return String(format: "#%02X%02X%02X", Int((color.redComponent * 255).rounded()), Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()))
+            }
+            // The bitmap capture shifts colors in its own color space, so the reference is a --sidebar swatch
+            // captured the same way, under the same appearance.
+            let swatchWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+            swatchWindow.appearance = NSAppearance(named: appearance)
+            let swatch = NSHostingView(rootView: Rectangle().fill(PBColor.sidebar).frame(width: 40, height: 40))
+            swatchWindow.contentView = swatch
+            swatch.layoutSubtreeIfNeeded()
+            let swatchBitmap = try XCTUnwrap(swatch.bitmapImageRepForCachingDisplay(in: swatch.bounds))
+            swatch.cacheDisplay(in: swatch.bounds, to: swatchBitmap)
+            let reference = hex(swatchBitmap.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB))
+            XCTAssertNotEqual(reference, "#FFFFFF", "the swatch did not render")
+            // An empty spot near the sidebar's bottom.
+            XCTAssertEqual(hex(pixel(NSPoint(x: 20, y: root.isFlipped ? root.bounds.height - 20 : 20))), reference, "\(appearance.rawValue) sidebar")
+
+            let wordmark = try XCTUnwrap(accessibilityElement("paperbranch.library.wordmark", in: renderedAccessibilityElements(in: root)))
+            let frame = root.convert(window.convertFromScreen(accessibilityFrame(of: wordmark)), from: nil)
+            var extreme: CGFloat = wordmarkIsLight ? 0 : 1
+            // The text starts after the 25-point tile and its 9-point gap.
+            for x in stride(from: frame.minX + 34, to: frame.maxX, by: 0.5) {
+                for y in stride(from: frame.minY, to: frame.maxY, by: 0.5) {
+                    guard let color = pixel(NSPoint(x: x, y: y)) else { continue }
+                    let luminance = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
+                    extreme = wordmarkIsLight ? max(extreme, luminance) : min(extreme, luminance)
+                }
+            }
+            if wordmarkIsLight { XCTAssertGreaterThan(extreme, 0.8, "dark wordmark ink") } else { XCTAssertLessThan(extreme, 0.2, "light wordmark ink") }
         }
-        XCTAssertGreaterThan(brightest, 0.8)
+    }
+
+    func testChromeUsesTokenColorsOnly() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PaperbranchBridgeCore")
+        for name in ["PaperbranchWindowPresentation.swift", "PaperbranchComponents.swift"] {
+            let source = try String(contentsOf: sources.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertFalse(source.contains("Color(red:"), "\(name) has a raw color literal")
+        }
     }
 
     @MainActor
@@ -453,12 +486,13 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryWindowIsDarkWhileStandaloneWindowsFollowTheSystem() throws {
+    func testLibraryAndStandaloneWindowsFollowTheSystemAppearance() throws {
         let libraryWindow = AppDelegate().makeLibraryWindow()
         defer { libraryWindow.setFrameAutosaveName("") }
         let standalone = StandaloneDocumentWindow(delegate: AppDelegate())
 
-        XCTAssertEqual(libraryWindow.appearance?.name, .darkAqua)
+        // Ticket 41 replaces Ticket 16's always-dark Library window: the design skill follows macOS.
+        XCTAssertNil(libraryWindow.appearance)
         XCTAssertNil(standalone.window.appearance)
     }
 
@@ -898,6 +932,13 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(folderRow.value(forKey: "accessibilityLabel") as? String, "Folder: Folder, collapsed")
         _ = folderRow.perform(NSSelectorFromString("accessibilityPerformPress"))
         XCTAssertEqual(folderChanges.map(\.1), [false, true])
+
+        // Unsaved edits add a dot and "Edited" to the card (Ticket 41, design skill "Open now card").
+        let edited = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: edited, wordCount: 1240)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(accessibilityElement("paperbranch.library.open-now", in: renderedAccessibilityElements(in: root))?.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1,240 words, Edited")
 
         // With no selection there is nothing open, so the card is hidden.
         XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: document, wordCount: 1240)))
