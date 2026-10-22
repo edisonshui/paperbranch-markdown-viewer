@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private var libraryRefreshTimer: Timer?
     private var documentOutline: [DocumentOutlineEntry] = []
     private var readingProgress = 0.0
+    private var documentWordCount: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let coordinator = BridgeCoordinator()
@@ -38,10 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             self.refreshWindowPresentation()
             self.presentConflict(conflict, for: self.documentSession, in: self.window)
         }
-        documentSession.navigationStateDidChange = { [weak self] outline, progress in
+        documentSession.navigationStateDidChange = { [weak self] outline, progress, wordCount in
             guard let self else { return }
             self.documentOutline = outline
             self.readingProgress = progress
+            self.documentWordCount = wordCount
             self.sidebarController.showDocumentNavigation(outline: outline, progress: progress)
             self.refreshWindowPresentation()
         }
@@ -61,7 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             onSelectOutline: { [weak self] id in self?.selectOutline(id) },
             restoreAppKitContent: { [weak self] in self?.documentController.restoreDocumentView() },
             onToggleSidebar: { [weak self] in self?.toggleLibrarySidebar() },
-            onOpen: { [weak self] in self?.handleOpen() }
+            onOpen: { [weak self] in self?.handleOpen() },
+            onSetFolderExpanded: { [weak self] node, expanded in
+                self?.libraryWorkflow.setFolder(node, expanded: expanded)
+                self?.showLibrary()
+            }
         )
         window.makeKeyAndOrderFront(nil)
         installMenu()
@@ -271,7 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 conflict: documentSession.conflict
             ),
             outline: documentOutline,
-            readingProgress: readingProgress
+            readingProgress: readingProgress,
+            wordCount: documentWordCount
         ))
     }
 

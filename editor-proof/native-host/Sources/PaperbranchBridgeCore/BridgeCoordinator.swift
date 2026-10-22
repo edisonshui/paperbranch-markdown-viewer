@@ -1,7 +1,7 @@
 import WebKit
 
 /// The narrow JS -> native messages the bridge accepts. The editor can push
-/// dirty state, document-outline entries, and reading progress, but never
+/// dirty state, document-outline entries, reading progress, and word count, but never
 /// document content, a file path, or anything resembling file access. See
 /// docs/specs/paperbranch-implementation.md ("Native and editor boundary").
 public enum BridgeError: Error {
@@ -19,7 +19,7 @@ public struct DocumentOutlineEntry: Equatable {
 public protocol BridgeCoordinatorDelegate: AnyObject {
     func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator)
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool)
-    func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double)
+    func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double, wordCount: Int?)
 }
 
 /// Owns the one `WKWebView` this proof host displays and the fixed message
@@ -176,7 +176,8 @@ extension BridgeCoordinator: WKScriptMessageHandler {
                 return DocumentOutlineEntry(id: id, text: text, level: level)
             }
             let progress = (body["progress"] as? NSNumber)?.doubleValue ?? 0
-            delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)))
+            let wordCount = (body["wordCount"] as? NSNumber)?.intValue
+            delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)), wordCount: wordCount)
         default:
             break
         }

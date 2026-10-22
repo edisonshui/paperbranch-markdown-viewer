@@ -186,6 +186,7 @@ The repository contains a throwaway HTML prototype and planning documents but no
 - Exact preservation of whitespace, list markers, or other equivalent Markdown syntax.
 - Raw HTML, front matter, footnotes, mathematical notation, Mermaid diagrams, and plugin systems.
 - Search, tags, backlinks, graph views, and document databases.
+- Favorites and Recently opened sidebar sections. The sidebar mirrors the Library's folders only.
 - Automatic saving or scheduled saving.
 - Version history, automatic conflict merging, or cloud-style conflict copies.
 - Public distribution, signing, notarization, an installer, the Mac App Store, or automatic updates.

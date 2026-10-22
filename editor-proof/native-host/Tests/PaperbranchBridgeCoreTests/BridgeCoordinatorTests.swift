@@ -57,14 +57,11 @@ final class BridgeCoordinatorTests: XCTestCase {
 
         var collapsedSidebar = LibrarySidebarState()
         collapsedSidebar.toggleCollapsed()
-        var collapsedFolder = LibrarySidebarState()
-        collapsedFolder.setExpanded(try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder })), expanded: false)
         let excludedStates: [PaperbranchWindowPresentationState] = [
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(documentURL))),
             .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: collapsedFolder, selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
@@ -555,6 +552,67 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibrarySidebarShowsOpenNowAboveCollapsibleFolders() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-open-now")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try "# Nested\n".write(to: folderURL.appendingPathComponent("Nested.md"), atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let folder = try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder }))
+
+        var folderChanges: [(URL, Bool)] = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView(), onSetFolderExpanded: { folderChanges.append(($0.url, $1)) })
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document, wordCount: 1240)))
+        var root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        var elements = renderedAccessibilityElements(in: root)
+        var sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        var labels = accessibilityDescendants(of: sidebar).compactMap { ($0.value(forKey: "accessibilityLabel") ?? $0.value(forKey: "accessibilityValue")) as? String }
+        // The tree is the Library's only navigation, so Variant B's flat items are gone.
+        for removed in ["All documents", "Favorites", "Recently opened"] {
+            XCTAssertFalse(labels.contains { $0.contains(removed) })
+        }
+        let openNow = try XCTUnwrap(accessibilityElement("paperbranch.library.open-now", in: elements))
+        XCTAssertEqual(openNow.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1,240 words")
+        var folderRow = try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements))
+        XCTAssertEqual(folderRow.value(forKey: "accessibilityLabel") as? String, "Folder: Folder, expanded")
+        // Accessibility frames use screen coordinates, so a higher row has a larger y.
+        XCTAssertGreaterThan(accessibilityFrame(of: openNow).minY, accessibilityFrame(of: folderRow).maxY)
+        XCTAssertTrue(labels.contains("Markdown document: Nested.md"))
+        _ = folderRow.perform(NSSelectorFromString("accessibilityPerformPress"))
+        XCTAssertEqual(folderChanges.map(\.0), [folder.url])
+        XCTAssertEqual(folderChanges.map(\.1), [false])
+
+        // A collapsed folder stays in the Variant B sidebar, hiding its documents until it is expanded again.
+        var collapsed = LibrarySidebarState()
+        collapsed.setExpanded(folder, expanded: false)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsed, selectedDocumentURL: documentURL, document: document, wordCount: 1)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        elements = renderedAccessibilityElements(in: root)
+        sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        labels = accessibilityDescendants(of: sidebar).compactMap { $0.value(forKey: "accessibilityLabel") as? String }
+        XCTAssertFalse(labels.contains("Markdown document: Nested.md"))
+        XCTAssertEqual(accessibilityElement("paperbranch.library.open-now", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1 word")
+        folderRow = try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements))
+        XCTAssertEqual(folderRow.value(forKey: "accessibilityLabel") as? String, "Folder: Folder, collapsed")
+        _ = folderRow.perform(NSSelectorFromString("accessibilityPerformPress"))
+        XCTAssertEqual(folderChanges.map(\.1), [false, true])
+
+        // With no selection there is nothing open, so the card is hidden.
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: document, wordCount: 1240)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertNil(accessibilityElement("paperbranch.library.open-now", in: renderedAccessibilityElements(in: root)))
+    }
+
+    @MainActor
     func testExpandedLibraryPresentationIgnoresSelectionOutsideItsLibrary() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-library")
         let outsideURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-outside")
@@ -631,12 +689,9 @@ final class BridgeCoordinatorTests: XCTestCase {
 
         var collapsedSidebar = LibrarySidebarState()
         collapsedSidebar.toggleCollapsed()
-        var collapsedFolder = LibrarySidebarState()
-        collapsedFolder.setExpanded(try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder })), expanded: false)
         let excludedStates: [PaperbranchWindowPresentationState] = [
             .init(library: emptyLibrary, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: collapsedFolder, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(previousDocumentURL))),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
@@ -728,7 +783,7 @@ final class BridgeCoordinatorTests: XCTestCase {
         let session = DocumentSession(coordinator: coordinator)
         var outline: [DocumentOutlineEntry] = []
         var progress = -1.0
-        session.navigationStateDidChange = { receivedOutline, receivedProgress in
+        session.navigationStateDidChange = { receivedOutline, receivedProgress, _ in
             outline = receivedOutline
             progress = receivedProgress
         }
@@ -1172,6 +1227,55 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertTrue(reloaded)
         let afterReload = try await coordinator.webView.evaluateJavaScript(metaLine) as? String
         XCTAssertEqual(afterReload, "3 words · 1 min read")
+    }
+
+    @MainActor
+    func testNavigationWordCountMatchesTheMetaLineThroughEditSaveAndExternalReload() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-navigation-word-count")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("counted.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        var wordCount: Int?
+        session.navigationStateDidChange = { _, _, words in wordCount = words }
+        try await session.open(documentURL)
+        let metaWordCount = "Number(document.querySelector('#document-meta span').textContent.split(' ')[0])"
+        func assertWordCountMatchesMetaLine(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) async throws {
+            let meta = try await coordinator.webView.evaluateJavaScript(metaWordCount) as? Int
+            XCTAssertEqual(meta, expected, file: file, line: line)
+            XCTAssertEqual(wordCount, expected, file: file, line: line)
+        }
+        try await assertWordCountMatchesMetaLine(1)
+
+        _ = try await coordinator.webView.callAsyncJavaScript(
+            """
+            const root = document.querySelector('#editor-root .ProseMirror');
+            const heading = root.querySelector('h1');
+            root.focus();
+            const range = document.createRange();
+            range.selectNodeContents(heading);
+            range.collapse(false);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('insertText', false, ' and more');
+            return true;
+            """,
+            contentWorld: .page
+        )
+        let edited = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(edited)
+        try await assertWordCountMatchesMetaLine(3)
+        try await session.save()
+        try await assertWordCountMatchesMetaLine(3)
+
+        // An atomic replacement, because the save moved the file to a new inode that an in-place write would not signal.
+        try "# Changed outside of Paperbranch today\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Changed outside")
+        XCTAssertTrue(reloaded)
+        try await assertWordCountMatchesMetaLine(5)
     }
 
     @MainActor

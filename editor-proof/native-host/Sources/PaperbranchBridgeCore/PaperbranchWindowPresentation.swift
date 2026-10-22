@@ -27,6 +27,8 @@ public struct PaperbranchWindowPresentationState {
     public let document: PaperbranchDocumentPresentationState?
     public let outline: [DocumentOutlineEntry]
     public let readingProgress: Double
+    /// The editor's count for the meta line. Nil for a blocked document, which has no meta line.
+    public let wordCount: Int?
 
     public init(
         library: LibraryBrowser?,
@@ -34,7 +36,8 @@ public struct PaperbranchWindowPresentationState {
         selectedDocumentURL: URL?,
         document: PaperbranchDocumentPresentationState?,
         outline: [DocumentOutlineEntry] = [],
-        readingProgress: Double = 0
+        readingProgress: Double = 0,
+        wordCount: Int? = nil
     ) {
         self.library = library
         self.sidebarState = sidebarState
@@ -42,6 +45,7 @@ public struct PaperbranchWindowPresentationState {
         self.document = document
         self.outline = outline
         self.readingProgress = max(0, min(1, readingProgress))
+        self.wordCount = wordCount
     }
 }
 
@@ -55,12 +59,14 @@ public final class PaperbranchWindowPresentation {
     private let onSelectOutline: (String) -> Void
     private let onToggleSidebar: () -> Void
     private let onOpen: () -> Void
+    private let onSetFolderExpanded: (LibraryNode, Bool) -> Void
     private let restoreAppKitContent: () -> Void
     private let appKitContentViewController: NSViewController?
     private let appKitContentView: NSView?
     private let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
     private var renderedDocumentURLs: Set<URL> = []
     private var renderedOutlineIDs: Set<String> = []
+    private var renderedFolderURLs: Set<URL> = []
     private var isShowingSwiftUI = false
 
     public init(
@@ -70,7 +76,8 @@ public final class PaperbranchWindowPresentation {
         onSelectOutline: @escaping (String) -> Void = { _ in },
         restoreAppKitContent: @escaping () -> Void = {},
         onToggleSidebar: @escaping () -> Void = {},
-        onOpen: @escaping () -> Void = {}
+        onOpen: @escaping () -> Void = {},
+        onSetFolderExpanded: @escaping (LibraryNode, Bool) -> Void = { _, _ in }
     ) {
         self.window = window
         self.webView = webView
@@ -79,6 +86,7 @@ public final class PaperbranchWindowPresentation {
         self.restoreAppKitContent = restoreAppKitContent
         self.onToggleSidebar = onToggleSidebar
         self.onOpen = onOpen
+        self.onSetFolderExpanded = onSetFolderExpanded
         appKitContentViewController = window.contentViewController
         appKitContentView = window.contentView
     }
@@ -95,8 +103,7 @@ public final class PaperbranchWindowPresentation {
               document.availability == .available,
               !document.isDirty,
               document.conflict == nil,
-              !state.sidebarState.isCollapsed,
-              everyFolderIsExpanded(in: library, sidebarState: state.sidebarState)
+              !state.sidebarState.isCollapsed
         else {
             restoreAppKitPresentation()
             return false
@@ -106,14 +113,18 @@ public final class PaperbranchWindowPresentation {
         let outline = state.selectedDocumentURL == nil ? [] : state.outline
         renderedDocumentURLs = documentURLs
         renderedOutlineIDs = Set(outline.map(\.id))
+        renderedFolderURLs = Set(library.root.flattened().compactMap { $0.kind == .folder ? $0.url : nil })
         hostingView.rootView = AnyView(PaperbranchLibraryWindowView(
             library: library,
+            sidebarState: state.sidebarState,
             selectedDocumentURL: state.selectedDocumentURL,
+            wordCount: state.wordCount,
             outline: outline,
             readingProgress: state.readingProgress,
             webView: webView,
             selectDocument: selectDocument(at:),
             selectOutline: selectOutline(id:),
+            setFolder: setFolder(_:expanded:),
             toggleSidebar: toggleSidebar,
             open: open
         ))
@@ -155,6 +166,7 @@ public final class PaperbranchWindowPresentation {
         window.setFrame(frame, display: true)
         renderedDocumentURLs = []
         renderedOutlineIDs = []
+        renderedFolderURLs = []
         isShowingSwiftUI = false
     }
 
@@ -171,6 +183,12 @@ public final class PaperbranchWindowPresentation {
         onSelectOutline(id)
     }
 
+    /// Dispatches a folder expansion change only for a folder in the rendered Library.
+    public func setFolder(_ node: LibraryNode, expanded: Bool) {
+        guard node.kind == .folder, renderedFolderURLs.contains(node.url) else { return }
+        onSetFolderExpanded(node, expanded)
+    }
+
     /// Runs the existing Open command. Its panel is a sheet on this window, so the reader stays showing until a document is routed.
     public func open() {
         onOpen()
@@ -181,20 +199,19 @@ public final class PaperbranchWindowPresentation {
         restoreAppKitPresentation()
         onToggleSidebar()
     }
-
-    private func everyFolderIsExpanded(in library: LibraryBrowser, sidebarState: LibrarySidebarState) -> Bool {
-        library.root.flattened().filter { $0.kind == .folder }.allSatisfy(sidebarState.isExpanded)
-    }
 }
 
 private struct PaperbranchLibraryWindowView: View {
     let library: LibraryBrowser
+    let sidebarState: LibrarySidebarState
     let selectedDocumentURL: URL?
+    let wordCount: Int?
     let outline: [DocumentOutlineEntry]
     let readingProgress: Double
     let webView: WKWebView
     let selectDocument: (URL) -> Void
     let selectOutline: (String) -> Void
+    let setFolder: (LibraryNode, Bool) -> Void
     let toggleSidebar: () -> Void
     let open: () -> Void
 
@@ -219,19 +236,18 @@ private struct PaperbranchLibraryWindowView: View {
                     // Clears the window buttons, which AppKit keeps at the window's top left.
                     .padding(.top, 20)
                     .padding(.bottom, 16)
-                    Text("LIBRARY")
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.1)
-                        .foregroundStyle(Color(red: 0.46, green: 0.47, blue: 0.44))
+                    // Open now sits above the tree so a long Library cannot push it out of view.
+                    if let selectedDocumentURL {
+                        PaperbranchSidebarLabel("OPEN NOW")
+                        PaperbranchOpenNowView(name: selectedDocumentURL.lastPathComponent, wordCount: wordCount)
+                    }
+                    PaperbranchSidebarLabel("LIBRARY")
                     ForEach(library.root.children) { node in
-                        PaperbranchLibraryNodeView(node: node, selectedDocumentURL: selectedDocumentURL, depth: 0, selectDocument: selectDocument)
+                        PaperbranchLibraryNodeView(node: node, sidebarState: sidebarState, selectedDocumentURL: selectedDocumentURL, depth: 0, selectDocument: selectDocument, setFolder: setFolder)
                     }
                     if !outline.isEmpty {
                         Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 12)
-                        Text("ON THIS PAGE")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1.1)
-                            .foregroundStyle(Color(red: 0.46, green: 0.47, blue: 0.44))
+                        PaperbranchSidebarLabel("ON THIS PAGE")
                         ForEach(outline, id: \.id) { entry in
                             Button(action: { selectOutline(entry.id) }) {
                                 Text(entry.text).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
@@ -330,19 +346,75 @@ private struct PaperbranchLibraryWindowView: View {
     }
 }
 
+private struct PaperbranchSidebarLabel: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold))
+            .tracking(1.1)
+            .foregroundStyle(Color(red: 0.46, green: 0.47, blue: 0.44))
+    }
+}
+
+/// Variant B's Open now entry: the selected document's name and word count, kept as quiet as the tree around it.
+private struct PaperbranchOpenNowView: View {
+    let name: String
+    let wordCount: Int?
+
+    private var wordCountText: String? {
+        wordCount.map { "\($0.formatted()) \($0 == 1 ? "word" : "words")" }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(name).font(.system(size: 13, weight: .medium)).foregroundStyle(Color(red: 0.85, green: 0.84, blue: 0.80)).lineLimit(1).truncationMode(.middle)
+            if let wordCountText {
+                Text(wordCountText).font(.system(size: 11)).foregroundStyle(Color(red: 0.47, green: 0.48, blue: 0.45))
+            }
+        }
+        .padding(.bottom, 12)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(["Open now: \(name)", wordCountText].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityIdentifier("paperbranch.library.open-now")
+    }
+}
+
 private struct PaperbranchLibraryNodeView: View {
     let node: LibraryNode
+    let sidebarState: LibrarySidebarState
     let selectedDocumentURL: URL?
     let depth: Int
     let selectDocument: (URL) -> Void
+    let setFolder: (LibraryNode, Bool) -> Void
 
     var body: some View {
         switch node.kind {
         case .folder:
+            let expanded = sidebarState.isExpanded(node)
             VStack(alignment: .leading, spacing: 4) {
-                Text(node.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color(red: 0.62, green: 0.62, blue: 0.58)).padding(.leading, CGFloat(depth) * 16)
-                ForEach(node.children) { child in
-                    PaperbranchLibraryNodeView(node: child, selectedDocumentURL: selectedDocumentURL, depth: depth + 1, selectDocument: selectDocument)
+                Button(action: { setFolder(node, !expanded) }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                            .frame(width: 10)
+                        Text(node.name).font(.system(size: 12, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(red: 0.62, green: 0.62, blue: 0.58))
+                .padding(.leading, CGFloat(depth) * 16)
+                .accessibilityLabel("Folder: \(node.name), \(expanded ? "expanded" : "collapsed")")
+                .accessibilityIdentifier("paperbranch.library.folder")
+                if expanded {
+                    ForEach(node.children) { child in
+                        PaperbranchLibraryNodeView(node: child, sidebarState: sidebarState, selectedDocumentURL: selectedDocumentURL, depth: depth + 1, selectDocument: selectDocument, setFolder: setFolder)
+                    }
                 }
             }
         case .document:

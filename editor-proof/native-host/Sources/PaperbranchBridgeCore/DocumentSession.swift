@@ -40,7 +40,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public var dirtyStateDidChange: ((Bool) -> Void)?
     public var availabilityDidChange: ((DocumentAvailability) -> Void)?
     public var conflictDidChange: ((DocumentConflict?) -> Void)?
-    public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
+    public var navigationStateDidChange: (([DocumentOutlineEntry], Double, Int?) -> Void)?
     private var lastDiskMarkdown: String?
     private var fileChangeMonitor: FileChangeMonitor?
 
@@ -178,7 +178,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         dirtyStateDidChange?(dirty)
     }
 
-    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double) {
-        navigationStateDidChange?(outline, progress)
+    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double, wordCount: Int?) {
+        navigationStateDidChange?(outline, progress, wordCount)
     }
 }
