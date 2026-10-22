@@ -1,0 +1,121 @@
+/* Paperbranch design tokens.
+ *
+ * Every color, font, size, space, radius, shadow, and duration Paperbranch uses
+ * lives here. Each color holds its light and dark value in one light-dark()
+ * call, so the app follows the macOS appearance and a change is a one-line edit.
+ * Force one appearance with data-theme="light" or data-theme="dark".
+ *
+ * Contrast is checked with the brand-guideline contrast.py script. Text pairs
+ * are 4.5:1 or better. Pairs marked "shape" are 3:1 or better and must not
+ * carry text.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---------- Surfaces ----------
+     22 Oct 2026: Edison replaced the cream paper and terracotta accent with white,
+     cool grays, and blue (palette A), because the warm tones threw him off. */
+  --paper: light-dark(#FFFFFF, #1C1C1E);        /* Document view background: the page you read on */
+  --sidebar: light-dark(#F7F7F8, #161618);      /* Library sidebar */
+  --surface: light-dark(#FFFFFF, #26262A);      /* Things raised above the page: dialogs, popovers, the Open now card, empty-state icon tile */
+  --row-hover: light-dark(#EFEFF1, #222225);    /* Sidebar and outline row under the pointer */
+  --row-selected: light-dark(#E7E7EA, #2C2C30); /* The selected Library document's row */
+  --code-bg: light-dark(#F3F3F5, #2A2A2E);      /* Inline code and fenced code blocks */
+  --selection: light-dark(#DCE7FD, #24385E);    /* Text selection inside the Document view */
+  --scrim: light-dark(rgba(17, 17, 19, 0.28), rgba(0, 0, 0, 0.5)); /* Backdrop behind a dialog */
+
+  /* ---------- Lines ---------- */
+  --rule: light-dark(#EBEBEE, #2E2E33);         /* Decorative hairlines: sidebar edge, under the top bar, table rows, the footer rule */
+  --border: light-dark(#DDDDE1, #3A3A40);       /* Outline of a secondary button, popover, or card. Decorative: the label carries meaning */
+
+  /* ---------- Ink ---------- */
+  --ink: light-dark(#1D1D1F, #E6E6E8);          /* Body text. 16.8:1 on paper light, 13.7:1 dark */
+  --ink-strong: light-dark(#111113, #FAFAFA);   /* Headings, wordmark, selected row text, primary button fill */
+  --ink-muted: light-dark(#5E5E64, #9C9CA3);    /* Meta line, labels, outline items, word count, secondary text. 6.4:1 light, 6.2:1 dark on paper */
+  --ink-icon: light-dark(#808087, #7C7C84);     /* Chevrons and glyph icons. Shape only: 3.2:1 or better on every surface */
+  --ink-on-strong: light-dark(#FFFFFF, #161618);/* Text on a --ink-strong fill (primary button) */
+
+  /* ---------- Accent: blue ---------- */
+  --accent: light-dark(#2563EB, #5B8DEF);       /* Shape only: reading progress line, selected-row bar, current outline mark, focus ring. 4.2:1 or better on every surface */
+  --accent-text: light-dark(#1D4ED8, #7EA7F5);  /* Links and inline code text. 6.7:1 light, 7.1:1 dark on paper */
+  --mark-bg: light-dark(#2563EB, #5B8DEF);      /* Wordmark "P" tile */
+  --mark-ink: light-dark(#FFFFFF, #0F1115);     /* The "P" on the tile. 5.2:1 light, 5.9:1 dark */
+
+  /* ---------- Status ---------- */
+  --danger: light-dark(#C4291C, #FF7B6E);       /* Warnings only: "Changed on disk", destructive buttons, missing-image outline. 5.7:1 on surface light, 6.0:1 dark */
+  --danger-ink: light-dark(#FFFFFF, #161618);   /* Text on a --danger fill */
+
+  /* ---------- Fonts ---------- */
+  --font-reading: ui-serif, "New York", "PB Serif", Charter, Georgia, serif;  /* Document body text, block quotes */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PB Sans", system-ui, sans-serif; /* Headings in the document, all app chrome */
+  --font-mono: ui-monospace, "SF Mono", "PB Mono", Menlo, monospace;          /* Code */
+
+  /* ---------- Type scale (px) ---------- */
+  --text-label: 11px;      /* Uppercase sidebar section labels */
+  --text-caption: 12px;    /* Meta line, footer, outline items, word count, table headers */
+  --text-ui: 13px;         /* Sidebar rows, buttons, top bar title: the macOS default */
+  --text-ui-large: 15px;   /* Dialog title, empty and error state title */
+  --text-code: 14px;       /* Fenced code blocks */
+  --text-body: 19px;       /* Document body */
+  --text-h4: 17px;
+  --text-h3: 21px;
+  --text-h2: 27px;
+  --text-h1: 40px;
+
+  --leading-body: 1.7;
+  --leading-heading: 1.2;
+  --leading-ui: 1.4;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.06em;
+
+  /* ---------- Space (4px base) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 72px;
+
+  /* ---------- Layout ---------- */
+  --measure: 680px;          /* Max width of the Document view's text column */
+  --sidebar-width: 260px;    /* Library sidebar */
+  --outline-width: 220px;    /* Outline panel on the right */
+  --topbar-height: 52px;     /* Top bar, which also holds the window buttons' row */
+  --row-height: 28px;        /* Sidebar and outline rows */
+  --indent: 16px;            /* One level of folder nesting */
+  --outline-min-window: 1240px; /* Below this window width the outline panel hides */
+
+  /* ---------- Radius ---------- */
+  --radius-s: 4px;           /* Inline code, the formatting popover's buttons */
+  --radius-m: 6px;           /* Rows and buttons */
+  --radius-l: 10px;          /* Dialogs, popovers, cards, code blocks, images */
+
+  /* ---------- Light: shadows only on things floating above the page ----------
+   Written without a spread value, so each works in box-shadow and in filter: drop-shadow(). */
+  --shadow-popover: 0 4px 16px light-dark(rgba(17, 17, 19, 0.12), rgba(0, 0, 0, 0.45));
+  --shadow-dialog: 0 16px 48px light-dark(rgba(17, 17, 19, 0.18), rgba(0, 0, 0, 0.6));
+
+  /* ---------- Motion ---------- */
+  --duration-fast: 120ms;    /* Hover and selection fills, popover fade */
+  --duration-medium: 200ms;  /* Sidebar collapse and reopen, folder expand */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-medium: 0ms;
+  }
+}

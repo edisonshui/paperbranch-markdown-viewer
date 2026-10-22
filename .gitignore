@@ -10,3 +10,6 @@ test-results/
 DerivedData/
 xcuserdata/
 *.xcuserstate
+
+# Brand mood board: Mobbin screenshots belong to their owners
+.scratch/paperbranch-brand/
