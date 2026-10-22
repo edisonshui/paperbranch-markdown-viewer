@@ -29,3 +29,11 @@ Verified 2026-10-22:
 - `./verify-package.sh`: 70 packaged native tests passed. `npx playwright test`: 68 of 68 passed three times. One earlier run had a single `strikethrough.spec.ts:31` failure, a typing-based test like the known flaky ones; this ticket changed no web code.
 
 Implementation commit: `cd0b1c9`.
+
+Follow-up 2026-10-22, from the design skill's "Overwrite warning" (`.claude/skills/paperbranch-design/screens.md`, relayed by the coordinator): Cancel is now the first, default button and Overwrite the second, with `hasDestructiveAction`. Title and message are unchanged.
+
+- AppKit gives a button titled Cancel the Escape key and leaves Return unassigned, and it resets key equivalents when the sheet appears (measured: Cancel's Return set before `beginSheetModal` was cleared). So Return is set on Cancel after the sheet begins.
+- That takes Escape away from Cancel (measured: Escape stopped dismissing the alert; a control run with AppKit's defaults dismissed it). While the alert is up, a local key monitor sends Escape to Cancel through `AppDelegate.cancelOnEscape(_:in:)`.
+- Verified: `testSwitchingAwayFromUnsavedEditsAsksToSaveCancelOrDiscard` first failed on the default and destructive checks, then passed. It checks the button order, Return on Cancel, Overwrite marked destructive, and that Escape and Return each cancel the switch and leave the disk version untouched. The test calls `cancelOnEscape` directly, because the test runner has no event loop to deliver keys to the monitor. Whether Cancel draws as the blue default button is inferred from its Return key equivalent, not seen. `./verify-package.sh`: 70 packaged native tests passed. `npx playwright test`: 69 of 69 passed.
+
+Follow-up commit: `fe4826d`.
