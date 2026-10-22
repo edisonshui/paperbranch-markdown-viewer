@@ -23,3 +23,12 @@ Needs Edison's decision. Options:
 1. Ask first, reusing the close alert: Save, Cancel, Discard. Recommended, because it matches the close flow and the specification's rule against silently discarding work.
 2. Keep the edits in memory per document and restore them when the user comes back. More work, and Paperbranch has no per-document buffers today.
 3. Block the switch until the user saves.
+
+## Decision
+
+Decided by Edison 2026-10-22, relayed by the coordinator.
+
+- Switching Library documents with unsaved edits shows the existing close alert: Save, Cancel, Discard.
+- Save writes the file, then switches. It uses the conflict-aware save path, so a document that changed on disk goes through the existing overwrite warning instead of being overwritten silently.
+- Cancel keeps the current document. The sidebar selection snaps back to it.
+- Discard switches without saving.
