@@ -641,9 +641,21 @@ final class BridgeCoordinatorTests: XCTestCase {
         try await waitFor { session.fileURL == b }
         XCTAssertEqual(session.fileURL, b)
         XCTAssertTrue(try String(contentsOf: a, encoding: .utf8).contains("!"))
-        // Save goes through the same conflict-aware save as Command-S, so the overwrite warning applies when that
-        // path raises it. Its Cancel cancels the switch. That warning needs a disk change the file monitor has not
-        // yet seen, which this test cannot set up reliably, so that branch is not exercised here.
+
+        // After a kept conflict, Save asks before overwriting (Ticket 37), and its Cancel cancels the switch.
+        try await open(a)
+        try await makeDirty()
+        try "# A changed elsewhere\n".write(to: a, atomically: true, encoding: .utf8)
+        _ = try await answerSheet("Keep Editing")
+        _ = try await switchTo(b, answering: "Save")
+        _ = try await answerSheet("Cancel")
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+        _ = try await switchTo(b, answering: "Save")
+        _ = try await answerSheet("Overwrite")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertFalse(try String(contentsOf: a, encoding: .utf8).contains("changed elsewhere"))
     }
 
     @MainActor
@@ -1782,6 +1794,40 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), diskContent)
         XCTAssertTrue(session.isDirty)
         XCTAssertNil(session.conflict)
+    }
+
+    @MainActor
+    func testSaveAfterKeepingASingleConflictAsksBeforeOverwriting() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-kept-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("kept.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        let diskContent = "# Changed elsewhere\n"
+        try diskContent.write(to: documentURL, atomically: true, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+        session.keepEditing()
+
+        // User story 28 (Edison, 2026-10-22): keeping edits never authorizes a silent overwrite, even with no second change.
+        await XCTAssertThrowsErrorAsync { try await session.save() }
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), diskContent)
+        XCTAssertTrue(session.isDirty)
+
+        try await session.save(overwritingExternalChanges: true)
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), keptContent)
+        XCTAssertFalse(session.isDirty)
+        XCTAssertNil(session.conflict)
+        // The overwrite settles the conflict, so the next save writes without asking.
+        try await session.save()
     }
 
     @MainActor
