@@ -29,3 +29,16 @@ Verified 2026-09-21:
 - Manual acceptance: incomplete. The offline launch, Library restoration, and copied-app relaunch were exercised manually. The Finder routing, direct formatted editing, local-image display, Command-S, clean external reload, and dirty-conflict flows were exercised by the packaged native suite, not by a full manual pass.
 
 Implementation commit: `7d2b9cabb8ecc2195fc9024d2841ed870eb7160c`.
+
+Functional acceptance pass 2026-10-22, packaged app after Tickets 29 to 34, against a test Library in `/tmp` (nested folders, a 3,039-word essay with 60 headings, tables, code, task lists, a local image, a missing image, a front-matter document, a `.markdown` file). Driven through accessibility actions, `open`, and synthetic mouse and key events; "measured" means seen in the app.
+
+- Choosing and restoring a Library: measured. Chosen with File > Choose Library and the folder panel. Relaunches restored it with the previous selection and collapsed folders.
+- Opening from Finder: measured with `open -a`. A Library document (`Ideas.markdown`) opened in the Library window and was selected in the sidebar. An outside document opened in its own Standalone window at 800x640 content size.
+- Direct formatted editing: measured. Typed characters landed in the formatted paragraph, and the top bar showed "Edited".
+- Local images: measured. A relative PNG rendered; a missing image showed the broken-image placeholder.
+- `Command-S`: measured. It wrote the file and cleared "Edited" in the Variant B presentation (fixed in Ticket 30).
+- Clean external reload: measured. An atomic replacement on disk showed the new text in the open document.
+- Dirty conflict resolution: measured for Reload Disk. A dirty document changed on disk showed "Changed on disk" and the conflict alert, and Reload Disk loaded the disk version. Keep Editing and the later overwrite confirmation were not exercised by hand, because the pass stopped sending keystrokes once Edison was using the Mac. The packaged native suite covers both.
+- Also seen: deleting the open document showed the unavailable state without resizing the window, and the front-matter document showed the blocked message.
+
+Still open in this ticket: the Variant B visual-match items, deferred until the brand guideline decides the visual direction. Ticket 35 (unsaved edits on document switch) needs Edison's decision.
