@@ -101,9 +101,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         // Assigning the content view controller shrinks the window to the split view's fitting size.
         window.setContentSize(NSSize(width: 960, height: 720))
         window.center()
-        window.setFrameAutosaveName("PaperbranchLibraryWindow")
-        window.setFrameUsingName("PaperbranchLibraryWindow")
+        window.identifier = Self.libraryWindowIdentifier
+        // Not AppKit's frame autosave: it drops a visible toolbar's height when saving and adds it back when
+        // restoring, and Variant B hides the toolbar, so the window grew by that height at every launch.
+        if let saved = UserDefaults.standard.string(forKey: Self.libraryWindowFrameKey) {
+            let frame = NSRectFromString(saved)
+            if frame.width > 0, frame.height > 0, NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
+                window.setFrame(frame, display: false)
+            }
+        }
         return window
+    }
+
+    static let libraryWindowFrameKey = "Paperbranch.libraryWindowFrame"
+    private static let libraryWindowIdentifier = NSUserInterfaceItemIdentifier("PaperbranchLibraryWindow")
+
+    func windowDidResize(_ notification: Notification) { saveLibraryWindowFrame(notification) }
+    func windowDidMove(_ notification: Notification) { saveLibraryWindowFrame(notification) }
+
+    /// Saves the Library window's full frame, which is the same in both presentations.
+    private func saveLibraryWindowFrame(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window.identifier == Self.libraryWindowIdentifier,
+              !window.styleMask.contains(.fullScreen) else { return }
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.libraryWindowFrameKey)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

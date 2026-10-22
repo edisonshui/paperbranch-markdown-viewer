@@ -584,6 +584,39 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryWindowRestoresTheFrameItHadInEitherPresentation() throws {
+        UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
+        defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-frame-presentation")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let state = PaperbranchWindowPresentationState(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )
+        let chosenFrame = NSRect(x: 140, y: 110, width: 1180, height: 760)
+
+        // AppKit's frame autosave drops a visible toolbar's height when saving and adds it back when restoring.
+        // Variant B hides the toolbar, so a frame saved there grew by the toolbar's height at every launch.
+        for showsVariantB in [true, false] {
+            let firstLaunch = AppDelegate().makeLibraryWindow()
+            let presentation = PaperbranchWindowPresentation(window: firstLaunch, webView: WKWebView())
+            if showsVariantB { XCTAssertTrue(presentation.render(state)) }
+            firstLaunch.setFrame(chosenFrame, display: false)
+            firstLaunch.setFrameAutosaveName("")
+            // Toolbars sharing an identifier share visibility in one process. A relaunch starts with it visible.
+            firstLaunch.toolbar?.isVisible = true
+
+            let nextLaunch = AppDelegate().makeLibraryWindow()
+            defer { nextLaunch.setFrameAutosaveName("") }
+            XCTAssertEqual(nextLaunch.frame, chosenFrame, showsVariantB ? "Saved in Variant B" : "Saved in AppKit")
+        }
+    }
+
+    @MainActor
     func testLongOutlineKeepsTheAppKitLibraryWindowFrameAndTreeVisible() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-long-outline")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
@@ -1965,7 +1998,7 @@ private func accessibilityFrame(of element: NSObject) -> NSRect {
 }
 
 /// AppKit's user-defaults key for the Library window's frame autosave name.
-private let libraryWindowFrameKey = "NSWindow Frame PaperbranchLibraryWindow"
+private let libraryWindowFrameKey = AppDelegate.libraryWindowFrameKey
 
 @MainActor
 private func windowContainsView(_ window: NSWindow, target: NSView) -> Bool {
