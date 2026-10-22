@@ -439,7 +439,8 @@ private struct PaperbranchLibraryNodeView: View {
             }
         case .document:
             let selected = node.url == selectedDocumentURL
-            Button(action: { selectDocument(node.url) }) { Text(node.name).frame(maxWidth: .infinity, alignment: .leading) }
+            // Without a content shape, a plain button takes clicks only on its drawn text.
+            Button(action: { selectDocument(node.url) }) { Text(node.name).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                 .buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(selected ? Color(red: 0.95, green: 0.63, blue: 0.49) : Color(red: 0.66, green: 0.66, blue: 0.62)).padding(.leading, CGFloat(depth) * 16).padding(.vertical, 4)
                 .background(selected ? Color(red: 0.91, green: 0.56, blue: 0.41).opacity(0.12) : .clear).clipShape(RoundedRectangle(cornerRadius: 5))
                 .accessibilityLabel(selected ? "Selected Markdown document: \(node.name)" : "Markdown document: \(node.name)")

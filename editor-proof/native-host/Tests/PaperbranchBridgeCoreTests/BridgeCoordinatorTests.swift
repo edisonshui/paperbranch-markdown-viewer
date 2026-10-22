@@ -762,6 +762,34 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryDocumentRowsAreClickableAcrossTheRowLikeFolderRows() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-row-hit-area")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("A.md")
+        try "# A\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let nestedURL = folderURL.appendingPathComponent("Nested.md")
+        try "# Nested\n".write(to: nestedURL, atomically: true, encoding: .utf8)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        XCTAssertTrue(presentation.render(.init(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: nestedURL,
+            document: .init(url: nestedURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )))
+        let root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        let elements = renderedAccessibilityElements(in: root)
+
+        // Folder and A.md both sit at the Library's top level, and A.md is not selected, so it draws no background. A plain button only takes clicks on drawn text unless it has a content shape.
+        let folder = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements)))
+        let document = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.library.document", in: elements)))
+        XCTAssertEqual(document.width, folder.width, accuracy: 1)
+    }
+
+    @MainActor
     func testExpandedLibraryPresentationIgnoresSelectionOutsideItsLibrary() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-library")
         let outsideURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-outside")
