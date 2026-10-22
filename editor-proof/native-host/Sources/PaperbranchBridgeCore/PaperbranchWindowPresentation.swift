@@ -346,7 +346,8 @@ private struct PaperbranchLibraryWindowView: View {
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .accessibilityIdentifier("paperbranch.document.view")
                         }
-                            .frame(maxWidth: 710)
+                            // The editor's CSS centers a 710-point article, so the Document view spans the reader
+                            // and scrolling over the margins moves the document.
                             .padding(.top, 50)
                             .accessibilityElement(children: .contain)
                             .accessibilityLabel("Document canvas")

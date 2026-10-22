@@ -374,7 +374,9 @@ final class BridgeCoordinatorTests: XCTestCase {
         let webViewFrame = accessibilityFrame(of: webView)
         XCTAssertFalse(webViewFrame.isEmpty)
         XCTAssertTrue(canvasFrame.contains(webViewFrame))
-        XCTAssertLessThan(canvasFrame.width, readerColumn.width)
+        // The Document view spans the reader so its margins scroll and its scroll bar sits at the window's edge.
+        // The editor's own CSS keeps the article a centered 710-point column.
+        XCTAssertEqual(webViewFrame.width, readerColumn.width, accuracy: 1)
         XCTAssertEqual(canvasFrame.midX, readerColumn.midX, accuracy: 1)
         XCTAssertGreaterThanOrEqual(accessibilityFrame(of: topBar).minY, canvasFrame.maxY)
         XCTAssertEqual(canvasFrame.minY, rootFrame.minY, accuracy: 1)
