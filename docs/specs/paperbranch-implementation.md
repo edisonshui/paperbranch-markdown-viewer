@@ -12,7 +12,7 @@ Build Paperbranch as a personal macOS application with one Library window and se
 
 The Document view renders Markdown as formatted content and allows direct editing. Paperbranch saves only when the user presses `Command-S`. It may normalize Markdown syntax during serialization as long as it preserves the document's meaning. It automatically reloads a clean document after an external change. If the document has unsaved edits, it preserves those edits and asks the user how to resolve the conflict.
 
-The [Variant B HTML prototype](../../index.html?variant=B) is the primary source for the product's visual design. Implementation should reproduce that variant's layout and interactions while applying the Paperbranch name and the behavior in this specification. The prototype is not the source of truth for file access, saving, editing, or application architecture.
+The Paperbranch brand guideline and its design skill (`.claude/skills/paperbranch-design/`) are the source for the product's visual design. Implementation follows their layout, components, tokens, and wording while applying the behavior in this specification. They are not the source of truth for file access, saving, editing, or application architecture.
 
 ## User stories
 
@@ -51,9 +51,9 @@ The [Variant B HTML prototype](../../index.html?variant=B) is the primary source
 
 ### Visual source of truth
 
-Use [Variant B of the HTML prototype](../../index.html?variant=B) as the visual source of truth. Reproduce its Library and reading layout, collapsible sidebar behavior, visual hierarchy, and window states. Replace the prototype's Folio branding with Paperbranch. Exclude the prototype switcher, demo content, browser file picker, and any behavior belonging to Variants A or C.
+Use the Paperbranch brand guideline, version 1 of 22 Oct 2026, and the design skill built from it as the visual source of truth. The skill (`.claude/skills/paperbranch-design/`: `SKILL.md`, `components.md`, `screens.md`, `tokens.css`) is committed and holds every value. The guideline PDF (`.scratch/paperbranch-brand/paperbranch-brand-guideline.pdf`, kept out of the repository because it contains third-party screenshots) shows the mockups. Edison decided on 22 Oct 2026 that they replace Variant B of the HTML prototype, which stays in the repository as history only.
 
-The prototype defines appearance and interaction intent. This specification and the accepted architecture decisions define product behavior.
+The guideline and skill define appearance and interaction intent. This specification and the accepted architecture decisions define product behavior.
 
 ### Application architecture
 
@@ -170,7 +170,7 @@ Milkdown passes the proof only if it preserves the semantic structure of all sup
 
 ### Visual verification
 
-Compare the Library window against the [Variant B HTML prototype](../../index.html?variant=B) at representative window sizes. Verify the expanded sidebar, collapsed sidebar, selected document, long document, empty Library, missing Library, dirty document, and conflict states. The prototype remains the comparison source, so tests should not duplicate its dimensions, colors, or typography as prose assertions.
+Compare the Library window and Standalone windows against the brand guideline and the design skill's screens at representative window sizes, in light and dark appearance. Verify the expanded sidebar, collapsed sidebar, selected document, long document, empty Library, missing Library, dirty document, and conflict states. The design skill remains the comparison source, so tests should not duplicate its dimensions, colors, or typography as prose assertions.
 
 ### Existing test infrastructure
 
@@ -196,13 +196,14 @@ The repository contains a throwaway HTML prototype and planning documents but no
 
 The following sources form the decision record for this specification:
 
-- [Visual prototype, Variant B](../../index.html?variant=B). This is the primary source for appearance and visual interaction.
+- The Paperbranch design skill (`.claude/skills/paperbranch-design/`) and brand guideline. These are the source for appearance and visual interaction.
+- [Visual prototype, Variant B](../../index.html?variant=B). Replaced as the visual source on 22 Oct 2026, kept as history.
 - [Project context and glossary](../../CONTEXT.md). This defines the canonical product name and terms.
 - [ADR 0001: Use a Library with standalone documents](../adr/0001-use-a-library-with-standalone-documents.md).
 - [ADR 0002: Edit formatted Markdown directly](../adr/0002-edit-formatted-markdown-directly.md).
 - [ADR 0003: Handle external file changes safely](../adr/0003-handle-external-file-changes-safely.md).
 - [macOS application approaches research](../research/macos-application-approaches.md). This contains the evidence for the architecture recommendation, framework comparison, file-access behavior, packaging, app-size ordering, update options, Markdown libraries, and distribution requirements.
 
-The prototype still uses the working name Folio and contains three design variants. Paperbranch is the canonical name. Only Variant B is the visual source for implementation.
+The prototype still uses the working name Folio and contains three design variants. Paperbranch is the canonical name. None of the variants is a visual source after 22 Oct 2026.
 
 The current folder has no configured issue tracker or `ready-for-agent` label. This trial therefore stores the specification locally instead of publishing an issue. Issue publication can happen later without changing the specification's contents.
