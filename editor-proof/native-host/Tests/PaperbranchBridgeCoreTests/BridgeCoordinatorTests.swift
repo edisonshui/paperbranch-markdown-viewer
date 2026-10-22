@@ -568,6 +568,85 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSwitchingAwayFromUnsavedEditsAsksToSaveCancelOrDiscard() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-switch-unsaved")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let a = libraryURL.appendingPathComponent("A.md").standardizedFileURL
+        let b = libraryURL.appendingPathComponent("B.md").standardizedFileURL
+        try "# A\n".write(to: a, atomically: true, encoding: .utf8)
+        try "# B\n".write(to: b, atomically: true, encoding: .utf8)
+        let workflow = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        try workflow.chooseLibrary(at: libraryURL)
+        let delegate = AppDelegate(libraryWorkflow: workflow)
+        delegate.setUpLibraryWindow()
+        let window = try XCTUnwrap(delegate.window)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        delegate.showLibrary()
+        let session = try XCTUnwrap(delegate.documentSession)
+
+        func waitFor(_ condition: () -> Bool) async throws {
+            for _ in 0..<80 where !condition() { try await Task.sleep(nanoseconds: 50_000_000) }
+        }
+        func open(_ url: URL) async throws {
+            delegate.routeFinderOpen([url])
+            try await waitFor { session.fileURL == url }
+            XCTAssertEqual(session.fileURL, url)
+        }
+        func makeDirty() async throws {
+            try await insertExclamationMark(in: session.coordinator)
+            try await waitFor { session.isDirty }
+            XCTAssertTrue(session.isDirty)
+        }
+        /// Selects `url` the way a sidebar click does, then answers the sheet that appears.
+        func switchTo(_ url: URL, answering title: String) async throws -> NSWindow {
+            delegate.sidebarController.select(url: url)
+            delegate.routeFinderOpen([url])
+            return try await answerSheet(title)
+        }
+        func answerSheet(_ title: String) async throws -> NSWindow {
+            try await waitFor { window.attachedSheet != nil }
+            let sheet = try XCTUnwrap(window.attachedSheet, "No alert appeared before \(title)")
+            let button = try XCTUnwrap(sheet.contentView.flatMap { buttons(in: $0) }?.first { $0.title == title })
+            button.performClick(nil)
+            try await waitFor { window.attachedSheet !== sheet }
+            return sheet
+        }
+        func assertStaysOn(_ url: URL, file: StaticString = #filePath, line: UInt = #line) async throws {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertEqual(session.fileURL, url, file: file, line: line)
+            XCTAssertTrue(session.isDirty, file: file, line: line)
+            XCTAssertEqual(workflow.selectedDocumentURL, url, file: file, line: line)
+            XCTAssertEqual(delegate.sidebarController.selectedDocumentURL, url, "The sidebar selection did not snap back", file: file, line: line)
+        }
+
+        try await open(a)
+        try await makeDirty()
+
+        // Cancel keeps the edited document, and the sidebar selection snaps back to it.
+        let alert = try await switchTo(b, answering: "Cancel")
+        XCTAssertEqual(Set(alert.contentView.flatMap { buttons(in: $0) }?.map(\.title).filter { !$0.isEmpty } ?? []), ["Save", "Cancel", "Discard"])
+        try await assertStaysOn(a)
+
+        // Discard switches without writing.
+        _ = try await switchTo(b, answering: "Discard")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A\n")
+
+        // Save writes, then switches.
+        try await open(a)
+        try await makeDirty()
+        _ = try await switchTo(b, answering: "Save")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertTrue(try String(contentsOf: a, encoding: .utf8).contains("!"))
+        // Save goes through the same conflict-aware save as Command-S, so the overwrite warning applies when that
+        // path raises it. Its Cancel cancels the switch. That warning needs a disk change the file monitor has not
+        // yet seen, which this test cannot set up reliably, so that branch is not exercised here.
+    }
+
+    @MainActor
     func testStandaloneWindowOpensAtDefaultContentSizeOnScreen() async throws {
         let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-size")
         defer { try? FileManager.default.removeItem(at: folderURL) }

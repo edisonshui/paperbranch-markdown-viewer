@@ -4,13 +4,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate {
-    private var window: NSWindow!
-    private var documentSession: DocumentSession!
+    private(set) var window: NSWindow!
+    private(set) var documentSession: DocumentSession!
     private var libraryPresentation: PaperbranchWindowPresentation!
-    private let sidebarController = LibrarySidebarViewController()
+    let sidebarController = LibrarySidebarViewController()
     private var documentController: DocumentPresentationViewController!
     private let splitController = NSSplitViewController()
-    private let libraryWorkflow = LibraryWorkflow()
+    private let libraryWorkflow: LibraryWorkflow
     private lazy var finderOpenWorkflow = FinderOpenWorkflow(libraryWorkflow: libraryWorkflow)
     private(set) var standaloneWindows: [URL: StandaloneDocumentWindow] = [:]
     private var windowsAllowedToClose: Set<NSWindow> = []
@@ -21,7 +21,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private var readingProgress = 0.0
     private var documentWordCount: Int?
 
+    init(libraryWorkflow: LibraryWorkflow = LibraryWorkflow()) {
+        self.libraryWorkflow = libraryWorkflow
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setUpLibraryWindow()
+        window.makeKeyAndOrderFront(nil)
+        installMenu()
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // AppKit calls local monitors on the main thread, so the event never leaves it.
+            nonisolated(unsafe) let event = event
+            let handled = MainActor.assumeIsolated { self?.handleKeyDown(event, keyWindow: NSApp.keyWindow) == nil }
+            return handled ? nil : event
+        }
+        restoreLibrary()
+        if !pendingFinderURLs.isEmpty {
+            let urls = pendingFinderURLs
+            pendingFinderURLs = []
+            routeFinderOpen(urls)
+        }
+        libraryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshLibraryIfNeeded() }
+        }
+    }
+
+    /// Builds the Library window, its Document view, and its presentation, and starts loading the editor.
+    /// Tests call this without the menu, key monitor, Library restore, or refresh timer.
+    func setUpLibraryWindow() {
         let coordinator = BridgeCoordinator()
         documentSession = DocumentSession(coordinator: coordinator)
         documentSession.dirtyStateDidChange = { [weak self] _ in
@@ -69,22 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 self?.showLibrary()
             }
         )
-        window.makeKeyAndOrderFront(nil)
-        installMenu()
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated { self?.handleKeyDown(event, keyWindow: NSApp.keyWindow) ?? event }
-        }
         coordinator.load(url: HarnessLocation.url)
-        restoreLibrary()
         isApplicationReady = true
-        if !pendingFinderURLs.isEmpty {
-            let urls = pendingFinderURLs
-            pendingFinderURLs = []
-            routeFinderOpen(urls)
-        }
-        libraryRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshLibraryIfNeeded() }
-        }
     }
 
     func makeLibraryWindow() -> NSWindow {
@@ -113,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         return window
     }
 
-    static let libraryWindowFrameKey = "Paperbranch.libraryWindowFrame"
+    nonisolated static let libraryWindowFrameKey = "Paperbranch.libraryWindowFrame"
     private static let libraryWindowIdentifier = NSUserInterfaceItemIdentifier("PaperbranchLibraryWindow")
 
     func windowDidResize(_ notification: Notification) { saveLibraryWindowFrame(notification) }
@@ -190,8 +204,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         panel.beginSheetModal(for: window) { [weak self] response in guard response == .OK, let url = panel.url else { return }; self?.routeFinderOpen([url]) }
     }
 
-    private func routeFinderOpen(_ urls: [URL]) {
+    func routeFinderOpen(_ urls: [URL]) {
         guard isApplicationReady else { pendingFinderURLs.append(contentsOf: urls); return }
+        // A Library document other than the open one replaces it, so unsaved edits there ask first (Ticket 35).
+        let replacing = Set(urls.map(\.standardizedFileURL).filter { $0 != documentSession.fileURL && isInLibrary($0) })
+        guard documentSession.isDirty, !replacing.isEmpty else { return openRouted(urls) }
+        confirmLibraryDocumentSwitch { [weak self] proceed in
+            guard let self else { return }
+            if proceed { return self.openRouted(urls) }
+            // Cancel keeps the edited document, so the sidebar's selection returns to it.
+            self.sidebarController.select(url: self.documentSession.fileURL)
+            self.refreshWindowPresentation()
+            let others = urls.filter { !replacing.contains($0.standardizedFileURL) }
+            if !others.isEmpty { self.openRouted(others) }
+        }
+    }
+
+    private func isInLibrary(_ url: URL) -> Bool {
+        libraryWorkflow.library?.root.flattened().contains { $0.kind == .document && $0.url == url } ?? false
+    }
+
+    /// Asks with the close alert. Save uses the conflict-aware save path, so a document changed on disk
+    /// still gets the overwrite warning, and cancelling that warning cancels the switch.
+    private func confirmLibraryDocumentSwitch(_ completion: @escaping (Bool) -> Void) {
+        let session: DocumentSession = documentSession
+        unsavedChangesAlert(for: session).beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn: self.save(session, in: self.window, afterSave: { completion(true) }, afterCancel: { completion(false) })
+            case .alertThirdButtonReturn: completion(true)
+            default: completion(false)
+            }
+        }
+    }
+
+    private func unsavedChangesAlert(for session: DocumentSession) -> NSAlert {
+        let alert = NSAlert(); alert.messageText = "Save changes to \(session.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
+        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
+        return alert
+    }
+
+    private func openRouted(_ urls: [URL]) {
         Task { [weak self] in guard let self else { return }; do {
             let results = try await finderOpenWorkflow.applicationDidReceiveFinderOpen(urls)
             for result in results {
@@ -289,7 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         }
     }
 
-    private func showLibrary() {
+    func showLibrary() {
         guard let library = libraryWorkflow.library else { return }
         sidebarController.show(library, sidebarState: libraryWorkflow.sidebarState, selectedDocumentURL: libraryWorkflow.selectedDocumentURL)
         splitController.splitViewItems.first?.isCollapsed = libraryWorkflow.sidebarState.isCollapsed
@@ -360,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         }
     }
 
-    private func save(_ session: DocumentSession, in owner: NSWindow, afterSave: @escaping () -> Void = {}) {
+    private func save(_ session: DocumentSession, in owner: NSWindow, afterSave: @escaping () -> Void = {}, afterCancel: @escaping () -> Void = {}) {
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -369,34 +422,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 afterSave()
             } catch let error as DocumentSessionError {
                 if case .overwriteConfirmationRequired = error {
-                    self.presentOverwriteConfirmation(for: session, in: owner, afterOverwrite: afterSave)
+                    self.presentOverwriteConfirmation(for: session, in: owner, afterOverwrite: afterSave, afterCancel: afterCancel)
                 } else {
                     self.presentError(error, for: session.fileURL)
+                    afterCancel()
                 }
             } catch {
                 self.presentError(error, for: session.fileURL)
+                afterCancel()
             }
         }
     }
 
-    private func presentOverwriteConfirmation(for session: DocumentSession, in owner: NSWindow, afterOverwrite: @escaping () -> Void = {}) {
+    private func presentOverwriteConfirmation(for session: DocumentSession, in owner: NSWindow, afterOverwrite: @escaping () -> Void = {}, afterCancel: @escaping () -> Void = {}) {
         let alert = NSAlert()
         alert.messageText = "Overwrite newer disk version of \(session.fileURL?.lastPathComponent ?? "this document")?"
         alert.informativeText = "Paperbranch will replace the version changed outside the app with your in-memory edits."
         alert.addButton(withTitle: "Overwrite")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: owner) { [weak self] response in
-            guard response == .alertFirstButtonReturn, let self else { return }
-            Task { do { try await session.save(overwritingExternalChanges: true); self.updateTitle(for: session); afterOverwrite() } catch { self.presentError(error, for: session.fileURL) } }
+            guard response == .alertFirstButtonReturn, let self else { return afterCancel() }
+            Task { do { try await session.save(overwritingExternalChanges: true); self.updateTitle(for: session); afterOverwrite() } catch { self.presentError(error, for: session.fileURL); afterCancel() } }
         }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard let session = documentSession(for: sender), session.isDirty, !windowsAllowedToClose.contains(sender) else { return true }
-        let alert = NSAlert(); alert.messageText = "Save changes to \(session.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
-        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
-        alert.beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
-        case .alertFirstButtonReturn: save(session, in: sender) { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) }
+        unsavedChangesAlert(for: session).beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
+        case .alertFirstButtonReturn: save(session, in: sender, afterSave: { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) })
         // The alert sheet is still attached inside this handler, and AppKit ignores a close then.
         case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); DispatchQueue.main.async { sender.performClose(nil) }
         default: break

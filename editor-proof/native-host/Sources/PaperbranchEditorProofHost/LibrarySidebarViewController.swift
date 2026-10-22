@@ -129,6 +129,9 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         outlineView.reloadData()
     }
 
+    /// The document the outline view shows as selected.
+    var selectedDocumentURL: URL? { (outlineView.item(atRow: outlineView.selectedRow) as? LibraryNode)?.url }
+
     func select(url: URL?) {
         isApplyingSelection = true
         defer { isApplyingSelection = false }
