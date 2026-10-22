@@ -4,11 +4,11 @@
 
 **Blocked by:** 30: Stay in Variant B while editing, switching, and toggling the sidebar.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The behavior follows the decision recorded in this ticket.
-- [ ] Selecting another document in the sidebar, the Open button or File > Open on a Library document, a Finder open of a Library document, and Choose Library all follow it.
-- [ ] Focused test passes red-to-green, then `editor-proof/native-host/verify-package.sh` passes.
+- [x] The behavior follows the decision recorded in this ticket.
+- [x] Selecting another document in the sidebar, the Open button or File > Open on a Library document, and a Finder open of a Library document all follow it. (Choose Library keeps the open document, per Ticket 18, so it replaces nothing and does not ask.)
+- [x] Focused test passes red-to-green, then `editor-proof/native-host/verify-package.sh` passes.
 
 ## Comments
 
@@ -32,3 +32,18 @@ Decided by Edison 2026-10-22, relayed by the coordinator.
 - Save writes the file, then switches. It uses the conflict-aware save path, so a document that changed on disk goes through the existing overwrite warning instead of being overwritten silently.
 - Cancel keeps the current document. The sidebar selection snaps back to it.
 - Discard switches without saving.
+
+Resolved 2026-10-22.
+
+- `AppDelegate.routeFinderOpen(_:)` is the one entry point for sidebar selections (both presentations), Open, File > Open, and Finder opens. When the Library document has unsaved edits and the request includes a different Library document, it shows the close alert first. Save calls the same `save(_:in:afterSave:afterCancel:)` as Command-S, then switches. Cancel, a cancelled overwrite warning, or a failed save keeps the current document, puts the AppKit sidebar's selection back on it, and still opens any Standalone documents in the same request. Discard switches without writing. The close alert's text now comes from one shared `unsavedChangesAlert(for:)`.
+- Test seam: `AppDelegate` takes its `LibraryWorkflow` in `init`, and `setUpLibraryWindow()` builds the Library window without the menu, key monitor, Library restore, or refresh timer. `applicationDidFinishLaunching` calls it, then does the rest in the same order as before.
+- Also fixed: two Swift 6 warnings from Tickets 30 and 34 (the key monitor's `NSEvent` crossing the main actor, and the frame key's isolation).
+- Needs Edison (found while testing, behavior from Ticket 09, not changed here): when a dirty document changes on disk, the conflict makes the changed file the new baseline. After Keep Editing, Save then overwrites that version with no further warning. The overwrite warning appears only if the file changes again before the file monitor sees it. The specification says a later save must "require explicit confirmation before replacing" the external version, which reads as asking every time.
+
+Verified 2026-10-22:
+
+- Red: `swift test --filter BridgeCoordinatorTests/testSwitchingAwayFromUnsavedEditsAsksToSaveCancelOrDiscard` failed: no alert appeared, and the switch went through.
+- Green: that test passed. It drives the real Library window: Cancel keeps A dirty with A selected in the workflow and the AppKit sidebar; Discard opens B and leaves A unchanged on disk; Save writes A and opens B. The overwrite-warning branch is not exercised, because the test cannot reliably change the file without the monitor noticing first.
+- `./verify-package.sh`: 69 packaged native tests passed. `npx playwright test`: 68 of 68 passed.
+
+Implementation commit: `c6e3c61`.
