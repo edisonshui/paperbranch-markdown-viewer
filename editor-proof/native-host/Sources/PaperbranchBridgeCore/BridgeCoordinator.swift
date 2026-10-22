@@ -1,3 +1,4 @@
+import AppKit
 import WebKit
 
 /// The narrow JS -> native messages the bridge accepts. The editor can push
@@ -60,6 +61,7 @@ public final class BridgeCoordinator: NSObject {
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
     }
 
     public func load(url: URL) {
@@ -180,6 +182,26 @@ extension BridgeCoordinator: WKScriptMessageHandler {
             delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)), wordCount: wordCount)
         default:
             break
+        }
+    }
+}
+
+extension BridgeCoordinator: WKUIDelegate {
+    /// The formatting popover's link button asks for a URL with `window.prompt`, which WKWebView answers only here.
+    /// A web view outside a window answers nothing, as a cancelled prompt.
+    public func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        guard let window = webView.window else { return completionHandler(nil) }
+        let alert = NSAlert()
+        alert.messageText = prompt
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = defaultText ?? ""
+        field.placeholderString = "https://"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Add Link")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            completionHandler(response == .alertFirstButtonReturn ? field.stringValue : nil)
         }
     }
 }

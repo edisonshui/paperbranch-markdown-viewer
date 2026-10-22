@@ -7,6 +7,7 @@ import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import "prosemirror-view/style/prosemirror.css";
 import { taskListItemView } from "./task-list-item-view";
+import { configureFormattingPopover, formattingPopover } from "./formatting-popover";
 import { classifyMarkdown, type AdmissionResult } from "./admission";
 import { installNativeBridge, reportDirtyState, reportNavigationState } from "./native-bridge";
 
@@ -105,12 +106,14 @@ async function loadMarkdown(markdown: string): Promise<AdmissionResult> {
         showDocumentStats(ctx);
         reportNavigation();
       });
+      configureFormattingPopover(ctx);
     })
     .use(commonmark)
     .use(gfm)
     .use(taskListItemView)
     .use(history)
     .use(listener)
+    .use(formattingPopover)
     .create();
 
   editor.action(showDocumentStats);

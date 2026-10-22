@@ -540,6 +540,34 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLinkPromptShowsASheetAndReturnsTheTypedURL() async throws {
+        let coordinator = BridgeCoordinator()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        // The test owns the window, so closing it must not release it a second time.
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.webView
+        defer { window.close() }
+        coordinator.webView.loadHTMLString("<p>Prompt</p>", baseURL: nil)
+        for _ in 0..<40 where coordinator.webView.isLoading { try await Task.sleep(nanoseconds: 50_000_000) }
+
+        // The formatting popover's link button asks with window.prompt, which WKWebView answers only through its UI delegate.
+        let answer = Task { try await coordinator.webView.callAsyncJavaScript("return prompt('Link URL')", contentWorld: .page) as? String }
+        for _ in 0..<40 where window.attachedSheet == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        let sheet = try XCTUnwrap(window.attachedSheet, "window.prompt showed no sheet")
+        let field = try XCTUnwrap(sheet.contentView.flatMap { textFields(in: $0) }?.first { $0.isEditable })
+        field.stringValue = "https://example.com"
+        let add = try XCTUnwrap(sheet.contentView.flatMap { buttons(in: $0) }?.first { $0.title == "Add Link" })
+        add.performClick(nil)
+
+        let typed = try await answer.value
+        XCTAssertEqual(typed, "https://example.com")
+    }
+
+    private func textFields(in view: NSView) -> [NSTextField] {
+        ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap { textFields(in: $0) }
+    }
+
+    @MainActor
     func testStandaloneWindowOpensAtDefaultContentSizeOnScreen() async throws {
         let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-size")
         defer { try? FileManager.default.removeItem(at: folderURL) }
