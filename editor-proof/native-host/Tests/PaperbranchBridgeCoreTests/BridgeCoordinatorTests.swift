@@ -503,6 +503,39 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLongOutlineKeepsTheAppKitLibraryWindowFrameAndTreeVisible() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-long-outline")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        try "# Reading\n".write(to: libraryURL.appendingPathComponent("Reading.md"), atomically: true, encoding: .utf8)
+        let sidebar = LibrarySidebarViewController()
+        let split = NSSplitViewController()
+        split.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebar))
+        let detail = NSViewController()
+        detail.view = NSView()
+        split.addSplitViewItem(NSSplitViewItem(viewController: detail))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.contentViewController = split
+        window.setFrame(NSRect(x: 0, y: 0, width: 1300, height: 800), display: false)
+        let chosenFrame = window.frame
+        sidebar.show(try LibraryBrowser.choose(libraryURL))
+
+        let outline = (0..<60).map { DocumentOutlineEntry(id: "heading-\($0)", text: "Section \($0)", level: $0 % 2 + 1) }
+        sidebar.showDocumentNavigation(outline: outline, progress: 0)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(window.frame, chosenFrame)
+        let tree = try XCTUnwrap(descendants(of: sidebar.view).first { $0 is NSOutlineView }?.enclosingScrollView)
+        XCTAssertGreaterThanOrEqual(tree.frame.height, 200, "The outline squeezed the Library tree to \(tree.frame.height) points")
+        let firstHeading = try XCTUnwrap(descendants(of: sidebar.view).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "heading-0" })
+        let sidebarFrame = sidebar.view.convert(sidebar.view.bounds, to: nil)
+        XCTAssertLessThan(firstHeading.convert(firstHeading.bounds, to: nil).minX - sidebarFrame.minX, 40, "Outline entries are not left-aligned")
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap { descendants(of: $0) }
+    }
+
+    @MainActor
     func testLibraryToolbarSidebarItemRoutesThroughLibrarySidebarToggle() throws {
         let delegate = AppDelegate()
         let toolbar = NSToolbar(identifier: "PaperbranchToolbarTest-\(UUID().uuidString)")
