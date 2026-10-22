@@ -90,6 +90,16 @@ for (const { label, markdown, element } of [
   });
 }
 
+test("an active button fills with --selection and draws its glyph in --accent-text", async ({ page }) => {
+  await load(page, "# Note\n\nOne **two** three.\n");
+  await selectWord(page, "two");
+  const colors = (label: string) => button(page, label).evaluate((b) => [getComputedStyle(b).backgroundColor, getComputedStyle(b).color]);
+  await expect(button(page, "Bold")).toHaveAttribute("aria-pressed", "true");
+  // Dark values of --selection (#24385E) and --accent-text (#7EA7F5), 4.85:1.
+  expect(await colors("Bold")).toEqual(["rgb(36, 56, 94)", "rgb(126, 167, 245)"]);
+  expect(await colors("Italic")).toEqual(["rgba(0, 0, 0, 0)", "rgb(230, 230, 232)"]);
+});
+
 test("Link asks for a URL to add a link, and removes an existing link without asking", async ({ page }) => {
   await load(page);
   await selectWord(page, "two");

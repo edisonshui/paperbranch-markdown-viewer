@@ -45,7 +45,7 @@
         border-top: 1px solid rgba(255,255,255,.12); color: #8f8c82; font-size: 12px;
       }
       #document-meta[hidden], #document-footer[hidden] { display: none; }
-      /* Formatting popover (Ticket 36). Dark values from the brand tokens --surface, --border, --ink, --row-selected, --radius-l, --radius-s, --shadow-popover. */
+      /* Formatting popover (Ticket 36). Dark values from the brand tokens --surface, --border, --ink, --selection, --accent-text, --radius-l, --radius-s, --shadow-popover. */
       #formatting-popover {
         position: absolute; top: 0; left: 0; z-index: 10; display: flex; gap: 2px; padding: 3px;
         background: #26262A; border: 1px solid #3A3A40; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.45);
@@ -56,7 +56,7 @@
         display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 4px;
         background: transparent; color: #E6E6E8; font: 13px -apple-system, BlinkMacSystemFont, sans-serif; cursor: default;
       }
-      #formatting-popover button[aria-pressed="true"] { background: #2C2C30; }
+      #formatting-popover button[aria-pressed="true"] { background: #24385E; color: #7EA7F5; }
       #formatting-popover .bold { font-weight: 700; }
       #formatting-popover .italic { font-family: ui-serif, "New York", Georgia, serif; font-style: italic; }
       #formatting-popover .strike { text-decoration: line-through; }
