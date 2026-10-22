@@ -92,22 +92,27 @@ public final class PaperbranchWindowPresentation {
     }
 
     /// Returns whether SwiftUI is visible. An ineligible snapshot restores AppKit before the caller can display that state.
-    /// With no selection, a Library with documents shows an empty reader, while the still-open document's facts must stay clean.
+    /// Unsaved edits, a conflict, a collapsed sidebar, and a document switch still loading all stay in Variant B,
+    /// because swapping the whole window for them made editing and switching jump. AppKit covers only a missing or
+    /// empty Library, an unavailable document, and unsaved work behind the empty reader, which Variant B has no state for.
     @discardableResult
     public func render(_ state: PaperbranchWindowPresentationState) -> Bool {
         let documentURLs = Set(state.library?.root.flattened().compactMap { $0.kind == .document ? $0.url : nil } ?? [])
         guard let library = state.library,
               let document = state.document,
               document.kind == .library,
-              state.selectedDocumentURL.map { document.url == $0 && documentURLs.contains($0) } ?? !documentURLs.isEmpty,
+              !documentURLs.isEmpty,
+              state.selectedDocumentURL.map(documentURLs.contains) ?? true,
               document.availability == .available,
-              !document.isDirty,
-              document.conflict == nil,
-              !state.sidebarState.isCollapsed
+              // The empty reader hides the open document, so unsaved work there stays visible in AppKit.
+              state.selectedDocumentURL != nil || (!document.isDirty && document.conflict == nil)
         else {
             restoreAppKitPresentation()
             return false
         }
+        // During a switch the snapshot still holds the previous document's facts, which do not describe the selection.
+        let showsSelectedDocument = state.selectedDocumentURL != nil && document.url == state.selectedDocumentURL
+        let documentStatus: String? = !showsSelectedDocument ? nil : document.conflict != nil ? "Changed on disk" : document.isDirty ? "Edited" : nil
 
         // The outline belongs to the selected document, so an empty reader drops the previous document's outline.
         let outline = state.selectedDocumentURL == nil ? [] : state.outline
@@ -118,6 +123,8 @@ public final class PaperbranchWindowPresentation {
             library: library,
             sidebarState: state.sidebarState,
             selectedDocumentURL: state.selectedDocumentURL,
+            documentStatus: documentStatus,
+            isSidebarCollapsed: state.sidebarState.isCollapsed,
             wordCount: state.wordCount,
             outline: outline,
             readingProgress: state.readingProgress,
@@ -194,9 +201,8 @@ public final class PaperbranchWindowPresentation {
         onOpen()
     }
 
-    /// Returns the Library window to AppKit before letting its existing toggle own the collapsed state.
+    /// Lets the existing toggle own the collapsed state. The next snapshot hides or shows the Variant B sidebar.
     public func toggleSidebar() {
-        restoreAppKitPresentation()
         onToggleSidebar()
     }
 }
@@ -205,6 +211,9 @@ private struct PaperbranchLibraryWindowView: View {
     let library: LibraryBrowser
     let sidebarState: LibrarySidebarState
     let selectedDocumentURL: URL?
+    /// "Edited" or "Changed on disk" for the selected document, shown after its name in the top bar.
+    let documentStatus: String?
+    let isSidebarCollapsed: Bool
     let wordCount: Int?
     let outline: [DocumentOutlineEntry]
     let readingProgress: Double
@@ -217,55 +226,57 @@ private struct PaperbranchLibraryWindowView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 9) {
-                        Text("P")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.10, green: 0.10, blue: 0.09))
-                            .frame(width: 25, height: 25)
-                            .background(Color(red: 0.91, green: 0.56, blue: 0.41), in: RoundedRectangle(cornerRadius: 7))
-                        // The sidebar is dark in every appearance, so the wordmark keeps Variant B's light ink.
-                        Text("Paperbranch")
-                            .font(.system(size: 16, weight: .bold))
-                            .tracking(-0.3)
-                            .foregroundStyle(Color(red: 0.91, green: 0.89, blue: 0.85))
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("paperbranch.library.wordmark")
-                    // Clears the window buttons, which AppKit keeps at the window's top left.
-                    .padding(.top, 20)
-                    .padding(.bottom, 16)
-                    // Open now sits above the tree so a long Library cannot push it out of view.
-                    if let selectedDocumentURL {
-                        PaperbranchSidebarLabel("OPEN NOW")
-                        PaperbranchOpenNowView(name: selectedDocumentURL.lastPathComponent, wordCount: wordCount)
-                    }
-                    PaperbranchSidebarLabel("LIBRARY")
-                    ForEach(library.root.children) { node in
-                        PaperbranchLibraryNodeView(node: node, sidebarState: sidebarState, selectedDocumentURL: selectedDocumentURL, depth: 0, selectDocument: selectDocument, setFolder: setFolder)
-                    }
-                    if !outline.isEmpty {
-                        Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 12)
-                        PaperbranchSidebarLabel("ON THIS PAGE")
-                        ForEach(outline, id: \.id) { entry in
-                            Button(action: { selectOutline(entry.id) }) {
-                                Text(entry.text).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(red: 0.66, green: 0.66, blue: 0.62))
-                            .padding(.leading, CGFloat(max(0, entry.level - 1)) * 12)
-                            .accessibilityIdentifier("paperbranch.library.outline.\(entry.id)")
+            if !isSidebarCollapsed {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 9) {
+                            Text("P")
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color(red: 0.10, green: 0.10, blue: 0.09))
+                                .frame(width: 25, height: 25)
+                                .background(Color(red: 0.91, green: 0.56, blue: 0.41), in: RoundedRectangle(cornerRadius: 7))
+                            // The sidebar is dark in every appearance, so the wordmark keeps Variant B's light ink.
+                            Text("Paperbranch")
+                                .font(.system(size: 16, weight: .bold))
+                                .tracking(-0.3)
+                                .foregroundStyle(Color(red: 0.91, green: 0.89, blue: 0.85))
                         }
-                    }
-                }.padding(16)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("paperbranch.library.wordmark")
+                        // Clears the window buttons, which AppKit keeps at the window's top left.
+                        .padding(.top, 20)
+                        .padding(.bottom, 16)
+                        // Open now sits above the tree so a long Library cannot push it out of view.
+                        if let selectedDocumentURL {
+                            PaperbranchSidebarLabel("OPEN NOW")
+                            PaperbranchOpenNowView(name: selectedDocumentURL.lastPathComponent, wordCount: wordCount)
+                        }
+                        PaperbranchSidebarLabel("LIBRARY")
+                        ForEach(library.root.children) { node in
+                            PaperbranchLibraryNodeView(node: node, sidebarState: sidebarState, selectedDocumentURL: selectedDocumentURL, depth: 0, selectDocument: selectDocument, setFolder: setFolder)
+                        }
+                        if !outline.isEmpty {
+                            Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 12)
+                            PaperbranchSidebarLabel("ON THIS PAGE")
+                            ForEach(outline, id: \.id) { entry in
+                                Button(action: { selectOutline(entry.id) }) {
+                                    Text(entry.text).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color(red: 0.66, green: 0.66, blue: 0.62))
+                                .padding(.leading, CGFloat(max(0, entry.level - 1)) * 12)
+                                .accessibilityIdentifier("paperbranch.library.outline.\(entry.id)")
+                            }
+                        }
+                    }.padding(16)
+                }
+                .frame(minWidth: 240, idealWidth: 252, maxWidth: 280)
+                .background(Color(red: 0.10, green: 0.10, blue: 0.09))
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Paperbranch Library")
+                .accessibilityIdentifier("paperbranch.library.sidebar")
             }
-            .frame(minWidth: 240, idealWidth: 252, maxWidth: 280)
-            .background(Color(red: 0.10, green: 0.10, blue: 0.09))
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Paperbranch Library")
-            .accessibilityIdentifier("paperbranch.library.sidebar")
             VStack(spacing: 0) {
                 HStack {
                     Button(action: toggleSidebar) {
@@ -276,13 +287,19 @@ private struct PaperbranchLibraryWindowView: View {
                             .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Collapse Library sidebar")
+                    .accessibilityLabel(isSidebarCollapsed ? "Show Library sidebar" : "Collapse Library sidebar")
                     .accessibilityIdentifier("paperbranch.reader.toggle-sidebar")
                     Spacer()
                     if let selectedDocumentURL {
-                        Text(selectedDocumentURL.lastPathComponent)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color(red: 0.67, green: 0.65, blue: 0.61))
+                        HStack(spacing: 8) {
+                            Text(selectedDocumentURL.lastPathComponent)
+                                .foregroundStyle(Color(red: 0.67, green: 0.65, blue: 0.61))
+                            if let documentStatus {
+                                Text(documentStatus)
+                                    .foregroundStyle(Color(red: 0.91, green: 0.56, blue: 0.41))
+                            }
+                        }
+                        .font(.system(size: 12))
                         Spacer()
                     }
                     Button(action: open) {
@@ -300,9 +317,11 @@ private struct PaperbranchLibraryWindowView: View {
                 .frame(height: 66)
                 .frame(maxWidth: 1_120)
                 .padding(.horizontal, 24)
+                // With the sidebar hidden, the window buttons sit over the top bar's leading edge.
+                .padding(.leading, isSidebarCollapsed ? 60 : 0)
                 .background(PaperbranchWindowDragArea())
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel(selectedDocumentURL.map { "Reader top bar for \($0.lastPathComponent)" } ?? "Reader top bar")
+                .accessibilityLabel(selectedDocumentURL.map { ["Reader top bar for \($0.lastPathComponent)", documentStatus].compactMap { $0 }.joined(separator: ", ") } ?? "Reader top bar")
                 .accessibilityIdentifier("paperbranch.reader.topbar")
 
                 if selectedDocumentURL == nil {

@@ -71,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         )
         window.makeKeyAndOrderFront(nil)
         installMenu()
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.handleKeyDown(event, keyWindow: NSApp.keyWindow) ?? event }
+        }
         coordinator.load(url: HarnessLocation.url)
         restoreLibrary()
         isApplicationReady = true
@@ -169,7 +172,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
 
     private func routeFinderOpen(_ urls: [URL]) {
         guard isApplicationReady else { pendingFinderURLs.append(contentsOf: urls); return }
-        libraryPresentation.restoreAppKitPresentation()
         Task { [weak self] in guard let self else { return }; do {
             let results = try await finderOpenWorkflow.applicationDidReceiveFinderOpen(urls)
             for result in results {
@@ -220,8 +222,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         save(session, in: window(for: session))
     }
 
+    /// Takes Command-S before the Document view does. WKWebView claims every key equivalent while it has
+    /// focus, and in the Variant B presentation its handback of an unhandled Command-S never reached the File menu.
+    func handleKeyDown(_ event: NSEvent, keyWindow: NSWindow?) -> NSEvent? {
+        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "s",
+              let keyWindow, keyWindow.attachedSheet == nil,
+              let session = documentSession(for: keyWindow), session.fileURL != nil
+        else { return event }
+        save(session, in: keyWindow)
+        return nil
+    }
+
     @objc private func toggleLibrarySidebar() {
-        libraryPresentation.restoreAppKitPresentation()
         splitController.splitViewItems.first?.isCollapsed.toggle()
         libraryWorkflow.toggleSidebar()
         refreshWindowPresentation()
@@ -294,6 +307,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         window.isDocumentEdited = documentSession.isDirty
     }
 
+    /// Updates the saved document's own window, which need not be the key window when the save finishes.
+    private func updateTitle(for session: DocumentSession) {
+        if let standalone = standaloneWindows.values.first(where: { $0.session === session }) { standalone.updateTitle() }
+        else { updateWindowTitle() }
+    }
+
     private var activeDocumentSession: DocumentSession? {
         if let standalone = standaloneWindows.values.first(where: { $0.window == NSApp.keyWindow }) { return standalone.session }
         return documentSession
@@ -326,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             guard let self else { return }
             do {
                 try await session.save()
-                self.updateWindowTitle()
+                self.updateTitle(for: session)
                 afterSave()
             } catch let error as DocumentSessionError {
                 if case .overwriteConfirmationRequired = error {
@@ -348,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: owner) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self else { return }
-            Task { do { try await session.save(overwritingExternalChanges: true); self.updateWindowTitle(); afterOverwrite() } catch { self.presentError(error, for: session.fileURL) } }
+            Task { do { try await session.save(overwritingExternalChanges: true); self.updateTitle(for: session); afterOverwrite() } catch { self.presentError(error, for: session.fileURL) } }
         }
     }
 
