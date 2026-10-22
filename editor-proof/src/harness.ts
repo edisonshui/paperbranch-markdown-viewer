@@ -135,7 +135,8 @@ function showDocumentStats(ctx: Ctx): void {
   wordCount = words;
   const minutes = Math.max(1, Math.ceil(words / 220));
   const item = (label: string) => Object.assign(document.createElement("span"), { textContent: label });
-  meta.replaceChildren(item(`${words} ${words === 1 ? "word" : "words"}`), item(`${minutes} min read`));
+  // Grouped the way the Open now card's Swift formatting groups it, so "3,039 words" reads the same in both.
+  meta.replaceChildren(item(`${words.toLocaleString()} ${words === 1 ? "word" : "words"}`), item(`${minutes} min read`));
 }
 
 function getMarkdownContent(): string {

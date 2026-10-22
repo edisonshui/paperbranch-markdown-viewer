@@ -74,6 +74,12 @@ test("the meta line updates after an edit and after an external reload", async (
   await expect(meta.locator("span")).toHaveText(["500 words", "3 min read"]);
 });
 
+test("the meta line groups thousands like the Open now card", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate((source) => window.editorContract.loadMarkdown(source), `${"word ".repeat(3039)}\n`);
+  await expect(page.locator("#document-meta span")).toHaveText(["3,039 words", "14 min read"]);
+});
+
 test("a blocked document shows no meta line", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => window.editorContract.loadMarkdown("---\ntitle: Blocked\n---\n\nText.\n"));
