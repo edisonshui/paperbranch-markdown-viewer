@@ -6,6 +6,9 @@ import { getMarkdown } from "@milkdown/kit/utils";
 import { history } from "@milkdown/kit/plugin/history";
 import { listener, listenerCtx } from "@milkdown/kit/plugin/listener";
 import "prosemirror-view/style/prosemirror.css";
+// The design skill's tokens are the single source of every value (Ticket 39). Vite bundles this file into the
+// packaged editor and serves it in dev, so there is no copy to drift.
+import "../../.claude/skills/paperbranch-design/tokens.css";
 import { taskListItemView } from "./task-list-item-view";
 import { configureFormattingPopover, formattingPopover } from "./formatting-popover";
 import { classifyMarkdown, type AdmissionResult } from "./admission";
