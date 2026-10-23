@@ -23,3 +23,5 @@ Verified 2026-10-22:
 - `./verify-package.sh`: 76 packaged native tests passed. `npx playwright test`: 75 of 75 passed.
 
 Implementation commit: `5fd580d`.
+
+Follow-up 2026-10-22, found in the visual pass: the unsaved-edits prompt drew Discard as a plain button, but `screens.md` "Unsaved edits on switch or close" marks it destructive. `beginUnsavedChangesAlert` now sets `hasDestructiveAction` on Discard and gives Return to Save after the sheet begins, for both the Ticket 35 switch prompt and the close alert. Red: the new Save and Discard checks in `testSwitchingAwayFromUnsavedEditsAsksToSaveCancelOrDiscard` failed; green after the change, with `testDiscardInCloseAlertClosesDirtyStandaloneWindow` still passing. Follow-up commit: `ec0d236`.

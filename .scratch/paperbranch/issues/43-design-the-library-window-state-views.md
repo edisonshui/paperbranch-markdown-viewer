@@ -37,3 +37,5 @@ Verified 2026-10-22:
 - Packaged app, Library folder moved away: Library unavailable matched guideline page 13 (screenshot deleted).
 
 Implementation commit: `950b5fa`.
+
+Follow-up 2026-10-22, found in the visual pass: deleting the selected document showed No document selected instead of Document unavailable. The one-second Library refresh drops the missing document from the tree and clears the selection. The presentation now keeps Document unavailable while the open, unavailable document is inside the current Library, even with no selection. Red: the deleted-document case added to `testLibraryWindowShowsTheDesignedStateViews` failed; green after the change. `./verify-package.sh`: 76 packaged native tests passed. `npx playwright test`: 75 of 75 passed. Follow-up commit: `ec0d236`.
