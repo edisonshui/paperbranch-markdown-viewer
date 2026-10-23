@@ -31,3 +31,5 @@ Verified 2026-10-22:
 - `npx playwright test`: 74 of 74 passed. `./verify-package.sh`: 72 packaged native tests passed. `index.html` has no `e88e68` or `22231f` left.
 
 Implementation commit: `5a30d9f`.
+
+Follow-up 2026-10-22, found in the visual pass: lists looked loose next to the guideline's editing mockup. Milkdown wraps each list item's text in a paragraph, and the paragraph's 16 px bottom margin applied inside the item. `.ProseMirror li > p { margin: 0 }` leaves the item's own `--space-1` margin to space the list. Red: "list items keep list spacing instead of paragraph spacing" failed (16px); green after the change. `npx playwright test`: 77 of 77 passed. `./verify-package.sh`: 78 packaged native tests passed. The 22 Oct screenshots in `.scratch/paperbranch-brand/switch-over/` were taken before this fix, so their lists still show the loose spacing. Follow-up commit: `4428a05`.
