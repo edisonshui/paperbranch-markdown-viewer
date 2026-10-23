@@ -428,6 +428,30 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSidebarSlidesInOneMediumDurationAndNotUnderReduceMotion() throws {
+        // Ticket 46: one --duration-medium slide, and no animation under Reduce Motion.
+        XCTAssertEqual(PaperbranchWindowPresentation.sidebarSlideDuration(reduceMotion: false), PBMotion.medium)
+        XCTAssertNil(PaperbranchWindowPresentation.sidebarSlideDuration(reduceMotion: true))
+
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-sidebar-slide")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document)))
+        let variantB = try XCTUnwrap(window.contentView)
+        var collapsed = LibrarySidebarState()
+        collapsed.toggleCollapsed()
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsed, selectedDocumentURL: documentURL, document: document)))
+        // The slide happens inside the same view: the window keeps its content and frame.
+        XCTAssertTrue(window.contentView === variantB)
+        XCTAssertTrue(presentation.isSidebarCollapsed)
+    }
+
+    @MainActor
     func testReaderSidebarToggleKeepsVariantBAndDelegatesToExistingSidebarWorkflow() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-sidebar-toggle")
         defer { try? FileManager.default.removeItem(at: libraryURL) }

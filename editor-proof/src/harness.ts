@@ -219,6 +219,24 @@ window.editorContract = {
 
 window.addEventListener("scroll", reportNavigation, { passive: true });
 
+// Collapsing or reopening the Library sidebar changes the Document view's width, which can reflow the text above the
+// reader. The block at the top of the view stays on the same line (Ticket 46).
+let readingAnchor: { block: Element; top: number } | null = null;
+
+function recordReadingAnchor(): void {
+  // The first block whose top edge is in view: a block cut off at the top reflows too, so its top is no anchor.
+  const blocks = Array.from(document.querySelectorAll("#editor-root .ProseMirror > *"));
+  const block = blocks.find((candidate) => candidate.getBoundingClientRect().top >= 0);
+  readingAnchor = block ? { block, top: block.getBoundingClientRect().top } : null;
+}
+
+window.addEventListener("scroll", recordReadingAnchor, { passive: true });
+window.addEventListener("resize", () => {
+  if (!readingAnchor?.block.isConnected || window.scrollY === 0) return;
+  const drift = readingAnchor.block.getBoundingClientRect().top - readingAnchor.top;
+  if (Math.abs(drift) >= 1) window.scrollBy(0, drift);
+});
+
 installNativeBridge({
   loadDocument: loadMarkdown,
   getMarkdown: getMarkdownContent,

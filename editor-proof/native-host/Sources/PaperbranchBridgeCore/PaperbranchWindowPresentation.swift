@@ -77,6 +77,15 @@ public final class PaperbranchWindowPresentation {
         return toolbar
     }()
     private let hostingView = NSHostingView(rootView: AnyView(EmptyView()))
+    /// The sidebar's collapsed state lives outside the rebuilt root view, so changing it can animate (Ticket 46).
+    private let chromeLayout = PaperbranchChromeLayout()
+
+    public var isSidebarCollapsed: Bool { chromeLayout.isSidebarCollapsed }
+
+    /// One --duration-medium slide for the sidebar, and none under Reduce Motion.
+    public static func sidebarSlideDuration(reduceMotion: Bool) -> Double? {
+        reduceMotion ? nil : PBMotion.medium
+    }
     private var renderedDocumentURLs: Set<URL> = []
     private var renderedOutlineIDs: Set<String> = []
     private var renderedFolderURLs: Set<URL> = []
@@ -155,7 +164,7 @@ public final class PaperbranchWindowPresentation {
             selectedDocumentURL: state.selectedDocumentURL,
             documentStatus: documentStatus,
             isEdited: showsSelectedDocument && document.isDirty,
-            isSidebarCollapsed: state.sidebarState.isCollapsed,
+            layout: chromeLayout,
             wordCount: state.wordCount,
             outline: outline,
             readingProgress: state.readingProgress,
@@ -168,6 +177,12 @@ public final class PaperbranchWindowPresentation {
             chooseLibrary: onChooseLibrary,
             reconnect: onReconnect
         ))
+        let collapse = state.sidebarState.isCollapsed
+        if collapse != chromeLayout.isSidebarCollapsed {
+            // Coming back from AppKit there is nothing on screen to slide from.
+            let duration = isShowingSwiftUI ? Self.sidebarSlideDuration(reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) : nil
+            withAnimation(duration.map { .easeInOut(duration: $0) }) { chromeLayout.isSidebarCollapsed = collapse }
+        }
         hostingView.setAccessibilityLabel("Paperbranch Library")
         hostingView.setAccessibilityIdentifier("paperbranch.library.window")
         if !isShowingSwiftUI {
@@ -244,6 +259,11 @@ public final class PaperbranchWindowPresentation {
     }
 }
 
+/// State the Library window view observes so it can animate, rather than receive in a rebuilt root view.
+final class PaperbranchChromeLayout: ObservableObject {
+    @Published var isSidebarCollapsed = false
+}
+
 /// What the reader shows below the top bar.
 private enum PaperbranchReaderContent: Equatable {
     case choosingLibrary
@@ -265,7 +285,8 @@ private struct PaperbranchLibraryWindowView: View {
     let selectedDocumentURL: URL?
     let documentStatus: PBDocumentStatus?
     let isEdited: Bool
-    let isSidebarCollapsed: Bool
+    @ObservedObject var layout: PaperbranchChromeLayout
+    private var isSidebarCollapsed: Bool { layout.isSidebarCollapsed }
     let wordCount: Int?
     let outline: [DocumentOutlineEntry]
     let readingProgress: Double
@@ -284,7 +305,9 @@ private struct PaperbranchLibraryWindowView: View {
             let showsOutlinePanel = proxy.size.width >= PBSize.outlineMinWindow
             HStack(spacing: 0) {
                 if !isSidebarCollapsed {
+                    // Slides out to the left while the reader, and its centered column, move with it.
                     sidebar(showsOutline: !showsOutlinePanel)
+                        .transition(.move(edge: .leading))
                 }
                 reader(showsOutlinePanel: showsOutlinePanel)
             }

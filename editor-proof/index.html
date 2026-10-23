@@ -8,6 +8,8 @@
          The page follows the macOS appearance through tokens.css's color-scheme (Ticket 40). */
       * { box-sizing: border-box; }
       html, body { min-height: 100%; }
+      /* The editor keeps the reading position itself on a width change (Ticket 46), the same in WebKit and in tests. */
+      html { overflow-anchor: none; }
       body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); }
       ::selection { background: var(--selection); }
 
