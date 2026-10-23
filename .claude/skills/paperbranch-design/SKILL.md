@@ -122,31 +122,18 @@ None as of 22 Oct 2026. For anything this skill does not settle, ask Edison or p
 
 To change a color, font, size, rule, or component, use the brand-guideline skill's change flow.
 
-## Where the app disagrees today
+## Decisions made while building
 
-The app still runs the warm dark Variant B theme. Edison chose on 22 Oct 2026 to switch it in tickets after this skill exists. As of commit `4ca693b`, these places disagree with the guideline:
+The switch-over (Tickets 39 to 46, 22 Oct 2026) moved the whole app onto this skill. These judgment calls came out of that work. Each one is recorded in its ticket under `.scratch/paperbranch/issues/`.
 
-**Document view** (`editor-proof/index.html`)
-- `:root` forces `color-scheme: dark`, and every color is a raw warm hex. Link `tokens.css` and replace each with its token.
-- `#document` is 710 px wide. The column is `--measure` (680 px).
-- Body line height is 1.82. It is `--leading-body` (1.7).
-- `h1` is centered at up to 66 px. It is 40 px and left-aligned. `h2` and `h3` are 26 and 20 px instead of 27 and 21.
-- The meta line is centered caption text. It is a left-aligned uppercase label above the title.
-- Links, inline code, the block quote bar, and the broken-image outline are terracotta. They are `--accent-text`, `--accent-text`, `--border`, and `--danger`.
-- The formatting popover hardcodes dark values. Replace them with tokens.
-
-**SwiftUI chrome** (`PaperbranchWindowPresentation.swift`)
-- Every color is a `Color(red:green:blue:)` literal, and the sidebar is dark in every appearance. Use the `PBColor` mirror.
-- The wordmark tile, the selected row's text and fill, and the progress line are terracotta. The selected row uses `--ink-strong` text, a `--row-selected` fill, and a 2 px `--accent` bar.
-- Folder names are 12 px semibold muted text. They are 13 px regular `--ink`, like documents.
-- Section labels are 10 px bold. They are 11 px semibold with 0.06em tracking.
-- The sidebar toggle and Open button sit on translucent white fills. They are an icon button and a secondary button.
-- The outline sits under the tree as "ON THIS PAGE". It moves to the right panel at 1240 px and wider.
-- The Document canvas is capped at 710 px.
-
-**AppKit**
-- The conflict alert makes "Reload Disk" the default. "Keep My Edits" is the default, and "Reload from Disk" has `hasDestructiveAction` set. Use the wording in [screens.md](screens.md#conflict-alert).
-- The AppKit fallback sidebar shows "Library access is unavailable." as a plain label. The Library unavailable screen replaces it.
+- The Library window uses an empty unified toolbar, so the window buttons sit inside the 52 px top bar.
+- The current outline heading is the last heading inside the top fifth of the Document view.
+- An empty Library shows the "No document selected" screen.
+- "Reconnect" retries the saved Library.
+- In a Standalone window, the "Document unavailable" message drops the pointer back to the Library, because there is none.
+- Popover icons draw at 16 px.
+- The meta line separates its parts with " · ".
+- The sidebar slide uses an ease-in-out curve. Fills and fades keep `--ease`.
 
 ## Checklist
 
