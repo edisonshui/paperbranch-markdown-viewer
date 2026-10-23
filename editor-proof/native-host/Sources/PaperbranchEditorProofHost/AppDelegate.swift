@@ -410,19 +410,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func presentConflict(_ conflict: DocumentConflict?, for session: DocumentSession, in owner: NSWindow) {
         guard case let .externalChange(url)? = conflict else { return }
         let alert = NSAlert()
+        // Wording and buttons from the design skill's "Conflict alert" (Ticket 44). Return keeps the edits, so the
+        // default button never loses work, and Reload from Disk is marked destructive.
         alert.messageText = "Changes conflict in \(url.lastPathComponent)"
-        alert.informativeText = "This Markdown document changed on disk while it has unsaved edits."
-        alert.addButton(withTitle: "Reload Disk")
-        alert.addButton(withTitle: "Keep Editing")
+        alert.informativeText = "This document changed on disk while you have unsaved edits. Keep your edits, or reload the version on disk and lose them."
+        let keep = alert.addButton(withTitle: "Keep My Edits")
+        alert.addButton(withTitle: "Reload from Disk").hasDestructiveAction = true
         alert.beginSheetModal(for: owner) { [weak self] response in
             guard let self else { return }
-            if response == .alertFirstButtonReturn {
+            if response == .alertSecondButtonReturn {
                 Task { do { try await session.reloadDiskVersion(); self.updateWindowTitle() } catch { self.presentError(error, for: session.fileURL) } }
             } else {
                 session.keepEditing()
                 self.updateWindowTitle()
             }
         }
+        // With a destructive button present AppKit leaves Return unassigned, and it settles key equivalents when the
+        // sheet appears, so Return is given to Keep My Edits here.
+        keep.keyEquivalent = "\r"
     }
 
     private func save(_ session: DocumentSession, in owner: NSWindow, afterSave: @escaping () -> Void = {}, afterCancel: @escaping () -> Void = {}) {

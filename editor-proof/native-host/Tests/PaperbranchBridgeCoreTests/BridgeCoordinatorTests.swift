@@ -687,7 +687,17 @@ final class BridgeCoordinatorTests: XCTestCase {
         try await open(a)
         try await makeDirty()
         try "# A changed elsewhere\n".write(to: a, atomically: true, encoding: .utf8)
-        _ = try await answerSheet("Keep Editing")
+        // Ticket 44: the conflict alert's wording and buttons follow the design skill. Return keeps the edits.
+        try await waitFor { window.attachedSheet != nil }
+        let conflictSheet = try XCTUnwrap(window.attachedSheet)
+        let conflictTexts = (conflictSheet.contentView.map { textFields(in: $0) } ?? []).map(\.stringValue)
+        XCTAssertTrue(conflictTexts.contains("Changes conflict in A.md"))
+        XCTAssertTrue(conflictTexts.contains("This document changed on disk while you have unsaved edits. Keep your edits, or reload the version on disk and lose them."))
+        let conflictButtons = try XCTUnwrap(conflictSheet.contentView.flatMap { buttons(in: $0) }).filter { !$0.title.isEmpty }
+        XCTAssertEqual(Set(conflictButtons.map(\.title)), ["Keep My Edits", "Reload from Disk"])
+        XCTAssertEqual(conflictButtons.first { $0.keyEquivalent == "\r" }?.title, "Keep My Edits")
+        XCTAssertEqual(conflictButtons.first { $0.title == "Reload from Disk" }?.hasDestructiveAction, true)
+        _ = try await answerSheet("Keep My Edits")
         // Escape also cancels the overwrite and writes nothing.
         _ = try await switchTo(b, answering: "Save")
         try await waitFor { window.attachedSheet != nil }
