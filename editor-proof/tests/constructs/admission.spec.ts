@@ -81,19 +81,38 @@ test.describe("editor admission: classification", () => {
     expect(classifyMarkdown(doc)).toEqual({ status: "admitted" });
   });
 
-  test("KNOWN TRADE-OFF: a paragraph with two unspaced dollar amounts is blocked as math", () => {
-    // This is not a detector bug: `$...$` is inherently ambiguous between
-    // "inline math" and "two currency amounts" in any implementation of
-    // this CommonMark math extension (Pandoc has the identical ambiguity).
-    // remark-math treats an opening `$` not immediately followed by
-    // whitespace as a potential math start, and pairs it with the next `$`
-    // in the same paragraph, so two dollar amounts with no blank line
-    // between them can read as one inline math span. See docs/adr/0004 for
-    // why this direction of failure is accepted: it over-blocks (a safe,
-    // recoverable usability cost) rather than under-blocking (which would
-    // risk the silent corruption this seam exists to prevent).
+  // Currency follows Pandoc's tex_math_dollars rule (Edison's decision, 22 Oct 2026):
+  // the opening $ needs a non-space character to its right, the closing $ needs a
+  // non-space character to its left and must not be followed by a digit.
+  test("two dollar amounts in one paragraph are prices, not math", () => {
     const doc = "This costs $5 and that costs $10, not a math expression.";
-    expect(classifyMarkdown(doc)).toEqual({ status: "blocked", reasons: ["math"] });
+    expect(classifyMarkdown(doc)).toEqual({ status: "admitted" });
+  });
+
+  test("a price range and a table of prices are admitted", () => {
+    const doc = [
+      "Rent runs $650 to $1,000 a bed, plus $30 per lease year.",
+      "",
+      "| Building | $/bed | Fee |",
+      "|---|---|---|",
+      "| HERE | $1,200 | $100 |",
+      "| Octave | $954 est. | $75 |",
+      "",
+    ].join("\n");
+    expect(classifyMarkdown(doc)).toEqual({ status: "admitted" });
+  });
+
+  test("a closing dollar sign followed by a digit is not math", () => {
+    expect(classifyMarkdown("Between $20,000 and $30,000 a year.")).toEqual({ status: "admitted" });
+  });
+
+  test("real inline math is still blocked next to prices", () => {
+    expect(classifyMarkdown("It costs $5, and $E = mc^2$ holds.")).toEqual({ status: "blocked", reasons: ["math"] });
+    expect(classifyMarkdown("Let $x$ be the rent.")).toEqual({ status: "blocked", reasons: ["math"] });
+  });
+
+  test("display math is still blocked", () => {
+    expect(classifyMarkdown("$$\n\\int_0^1 x \\, dx\n$$\n")).toEqual({ status: "blocked", reasons: ["math"] });
   });
 
   test("a single unpaired dollar sign is not mistaken for math", () => {
