@@ -140,6 +140,11 @@ public final class PaperbranchWindowPresentation {
             if case let .unavailable(name) = state.libraryAvailability { content = .libraryUnavailable(name: name) } else { content = .choosingLibrary }
         } else if let selected = state.selectedDocumentURL {
             content = showsSelectedDocument && document.availability == .unavailable ? .documentUnavailable(name: selected.lastPathComponent) : .document
+        } else if let gone = document.url, document.availability == .unavailable,
+                  let root = state.library?.root.url.standardizedFileURL.path, gone.path.hasPrefix(root + "/") {
+            // The Library refresh drops a deleted document from the tree and clears the selection, but the open
+            // document is still this Library's, so the window keeps saying it is unavailable.
+            content = .documentUnavailable(name: gone.lastPathComponent)
         } else {
             content = .noSelection
         }
@@ -247,9 +252,9 @@ private enum PaperbranchReaderContent: Equatable {
     case documentUnavailable(name: String)
     case document
 
-    var isDocumentUnavailable: Bool {
-        if case .documentUnavailable = self { return true }
-        return false
+    var unavailableDocumentName: String? {
+        if case let .documentUnavailable(name) = self { return name }
+        return nil
     }
 }
 
@@ -338,7 +343,7 @@ private struct PaperbranchLibraryWindowView: View {
     private func reader(showsOutlinePanel: Bool) -> some View {
         VStack(spacing: 0) {
             PBTopBar(
-                title: content == .document || content.isDocumentUnavailable ? selectedDocumentURL?.lastPathComponent : nil,
+                title: content == .document ? selectedDocumentURL?.lastPathComponent : content.unavailableDocumentName,
                 status: content == .document ? documentStatus : nil,
                 // With the sidebar hidden, the toggle sits beside the window buttons.
                 leadingInset: isSidebarCollapsed ? 64 : 0,

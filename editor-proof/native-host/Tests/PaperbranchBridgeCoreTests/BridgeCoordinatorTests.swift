@@ -667,6 +667,10 @@ final class BridgeCoordinatorTests: XCTestCase {
         // Cancel keeps the edited document, and the sidebar selection snaps back to it.
         let alert = try await switchTo(b, answering: "Cancel")
         XCTAssertEqual(Set(alert.contentView.flatMap { buttons(in: $0) }?.map(\.title).filter { !$0.isEmpty } ?? []), ["Save", "Cancel", "Discard"])
+        // Design skill, "Unsaved edits on switch or close": Save is the default and Discard is destructive.
+        let promptButtons = alert.contentView.flatMap { buttons(in: $0) } ?? []
+        XCTAssertEqual(promptButtons.first { $0.keyEquivalent == "\r" }?.title, "Save")
+        XCTAssertEqual(promptButtons.first { $0.title == "Discard" }?.hasDestructiveAction, true)
         try await assertStaysOn(a)
 
         // Discard switches without writing.
@@ -1480,6 +1484,14 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertTrue(labels(elements).contains("Selected.md may have been moved or deleted. Choose another document from the Library."))
         XCTAssertNotNil(accessibilityElement("paperbranch.library.selected-document", in: elements))
         XCTAssertNil(accessibilityElement("paperbranch.document.view", in: elements))
+
+        // A deleted document leaves the tree at the next refresh, which clears the selection. The open document
+        // is still this Library's, so the window keeps saying it is unavailable instead of falling back to no selection.
+        let deletedURL = libraryURL.appendingPathComponent("Deleted.md")
+        let deleted = PaperbranchDocumentPresentationState(url: deletedURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)
+        elements = try render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: deleted))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Document unavailable")
+        XCTAssertTrue(labels(elements).contains("Deleted.md may have been moved or deleted. Choose another document from the Library."))
 
         // Unsaved work behind a missing Library stays visible in AppKit.
         let dirty = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)

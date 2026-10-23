@@ -228,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     /// still gets the overwrite warning, and cancelling that warning cancels the switch.
     private func confirmLibraryDocumentSwitch(_ completion: @escaping (Bool) -> Void) {
         let session: DocumentSession = documentSession
-        unsavedChangesAlert(for: session).beginSheetModal(for: window) { [weak self] response in
+        beginUnsavedChangesAlert(for: session, on: window) { [weak self] response in
             guard let self else { return }
             switch response {
             case .alertFirstButtonReturn: self.save(session, in: self.window, afterSave: { completion(true) }, afterCancel: { completion(false) })
@@ -238,10 +238,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         }
     }
 
-    private func unsavedChangesAlert(for session: DocumentSession) -> NSAlert {
+    /// The design skill's "Unsaved edits on switch or close": Save is the default and Discard is destructive.
+    private func beginUnsavedChangesAlert(for session: DocumentSession, on window: NSWindow, completion: @escaping (NSApplication.ModalResponse) -> Void) {
         let alert = NSAlert(); alert.messageText = "Save changes to \(session.fileURL?.lastPathComponent ?? "this document")?"; alert.informativeText = "Your edits will be lost if you do not save them."
-        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel"); alert.addButton(withTitle: "Discard")
-        return alert
+        let save = alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard").hasDestructiveAction = true
+        alert.beginSheetModal(for: window, completionHandler: completion)
+        // With a destructive button present AppKit leaves Return unassigned once the sheet appears, so Save gets it here.
+        save.keyEquivalent = "\r"
     }
 
     private func openRouted(_ urls: [URL]) {
@@ -489,7 +494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard let session = documentSession(for: sender), session.isDirty, !windowsAllowedToClose.contains(sender) else { return true }
-        unsavedChangesAlert(for: session).beginSheetModal(for: sender) { [weak self] response in guard let self else { return }; switch response {
+        beginUnsavedChangesAlert(for: session, on: sender) { [weak self] response in guard let self else { return }; switch response {
         case .alertFirstButtonReturn: save(session, in: sender, afterSave: { self.windowsAllowedToClose.insert(sender); sender.performClose(nil) })
         // The alert sheet is still attached inside this handler, and AppKit ignores a close then.
         case .alertThirdButtonReturn: windowsAllowedToClose.insert(sender); DispatchQueue.main.async { sender.performClose(nil) }
