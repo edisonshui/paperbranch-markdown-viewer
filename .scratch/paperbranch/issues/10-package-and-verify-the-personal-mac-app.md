@@ -9,10 +9,10 @@
 - [x] Xcode produces a Paperbranch macOS application bundle that launches on the user's Mac.
 - [x] The built application works without an account, server, or internet connection.
 - [x] The application uses the Paperbranch name and contains no prototype switcher, Folio branding, sample documents, or browser file picker.
-- [ ] The Library window and Standalone windows match the approved Variant B visual direction at representative window sizes.
+- [ ] The Library window and Standalone windows match the Paperbranch brand guideline and design skill (which replaced Variant B on 22 Oct 2026) at representative window sizes.
 - [ ] Visual verification covers an expanded and collapsed sidebar, a selected document, a long document, an empty Library, an unavailable Library, a dirty document, and a conflict.
 - [x] The complete application-workflow and editor-contract test suites pass against the packaged implementation.
-- [ ] A manual acceptance pass confirms choosing and restoring a Library, opening from Finder, direct formatted editing, local images, `Command-S`, clean external reloads, and dirty conflict resolution.
+- [x] A manual acceptance pass confirms choosing and restoring a Library, opening from Finder, direct formatted editing, local images, `Command-S`, clean external reloads, and dirty conflict resolution.
 - [x] The personal build adds no signing, notarization, installer, telemetry, update service, or public release configuration.
 - [x] The application can be copied to the user's Applications folder and launched again with its Library access and document behavior intact.
 
@@ -42,3 +42,8 @@ Functional acceptance pass 2026-10-22, packaged app after Tickets 29 to 34, agai
 - Also seen: deleting the open document showed the unavailable state without resizing the window, and the front-matter document showed the blocked message.
 
 Still open in this ticket: the Variant B visual-match items, deferred until the brand guideline decides the visual direction. Ticket 35 (unsaved edits on document switch) needs Edison's decision.
+
+Visual pass 2026-10-22 against the brand guideline (screenshots in `.scratch/paperbranch-brand/switch-over/`, gitignored, light and dark): Library window reading and editing, unsaved-edits prompt, conflict alert, overwrite warning, Document unavailable, No document selected, Choosing a Library, and Library unavailable all match `screens.md` and the guideline mockups after Tickets 39 to 44 and their follow-ups (`ec0d236` fixed Document unavailable after a Library refresh and the destructive Discard button).
+
+- The manual acceptance item is now complete. In the packaged app the visual pass chose Keep My Edits on a real conflict, saved, got the overwrite warning, and confirmed Overwrite, in both appearances. With the earlier functional pass, every listed flow has been exercised by hand.
+- Still open, needs Edison's visual check: the collapsed sidebar (Ticket 46's slide), Standalone windows (Ticket 45), an empty Library, and a window under the 1240 px outline breakpoint. Edison came back to the Mac before these were captured, so the two visual criteria stay unchecked.
