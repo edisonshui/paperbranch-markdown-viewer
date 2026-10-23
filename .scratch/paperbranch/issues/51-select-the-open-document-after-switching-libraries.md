@@ -22,3 +22,5 @@ Verified 2026-10-23:
 - Red: `testSelectingTheOpenDocumentAfterSwitchingLibrariesSelectsItAgain` failed, with the selection nil after the click.
 - Green: that test passed. `./verify-package.sh`: 82 packaged native tests passed. `npx playwright test`: 83 passed and 1 failed on the first run, then 84 of 84 passed on six reruns. This ticket changed no web code, and the failure did not come back, so which test flaked is not known.
 - Not measured: the fix in the running app. It needs Edison's check by eye.
+
+Confirmed by Edison 2026-10-23 in the running app: after switching from the empty Library back to the Sample Library, clicking `project-ideas.md` opens it.

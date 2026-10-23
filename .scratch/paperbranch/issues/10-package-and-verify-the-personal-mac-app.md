@@ -4,13 +4,13 @@
 
 **Blocked by:** 03: Display local images safely; 05: Restore and refresh the Library; 06: Open Library and Standalone documents from Finder; 07: Add the document outline and reading progress; 09: Resolve external changes with unsaved edits.
 
-**Status:** in-progress
+**Status:** resolved
 
 - [x] Xcode produces a Paperbranch macOS application bundle that launches on the user's Mac.
 - [x] The built application works without an account, server, or internet connection.
 - [x] The application uses the Paperbranch name and contains no prototype switcher, Folio branding, sample documents, or browser file picker.
-- [ ] The Library window and Standalone windows match the Paperbranch brand guideline and design skill (which replaced Variant B on 22 Oct 2026) at representative window sizes.
-- [ ] Visual verification covers an expanded and collapsed sidebar, a selected document, a long document, an empty Library, an unavailable Library, a dirty document, and a conflict.
+- [x] The Library window and Standalone windows match the Paperbranch brand guideline and design skill (which replaced Variant B on 22 Oct 2026) at representative window sizes.
+- [x] Visual verification covers an expanded and collapsed sidebar, a selected document, a long document, an empty Library, an unavailable Library, a dirty document, and a conflict.
 - [x] The complete application-workflow and editor-contract test suites pass against the packaged implementation.
 - [x] A manual acceptance pass confirms choosing and restoring a Library, opening from Finder, direct formatted editing, local images, `Command-S`, clean external reloads, and dirty conflict resolution.
 - [x] The personal build adds no signing, notarization, installer, telemetry, update service, or public release configuration.
@@ -49,3 +49,7 @@ Visual pass 2026-10-22 against the brand guideline (screenshots in `.scratch/pap
 - Still open, needs Edison's visual check: the collapsed sidebar (Ticket 46's slide), Standalone windows (Ticket 45), an empty Library, and a window under the 1240 px outline breakpoint. Edison came back to the Mac before these were captured, so the two visual criteria stay unchecked.
 
 Edison's visual check 2026-10-23 in the running app, light and dark: the collapsed sidebar slides away in one smooth move with the text staying put (Ticket 46), Command-O opens an outside document in a Standalone window with no Library parts (Ticket 45), and below 1240 px the outline moves from the right panel to under the Library tree. Still open: an empty Library.
+
+Confirmed by Edison 2026-10-23 in the running app: an empty Library shows correctly, and switching from it back to the Sample Library works after Ticket 51. With the visual pass of 2026-10-22 and his checks above, every listed state has been seen in both appearances, so both visual criteria are met.
+
+Resolved 2026-10-23.
