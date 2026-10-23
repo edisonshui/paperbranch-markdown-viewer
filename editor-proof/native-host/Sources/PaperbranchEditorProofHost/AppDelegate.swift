@@ -279,18 +279,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
 
     func openStandaloneDocument(at url: URL) async throws {
         let standalone = StandaloneDocumentWindow(delegate: self)
-        standalone.session.dirtyStateDidChange = { [weak standalone] _ in standalone?.updateTitle() }
-        standalone.session.availabilityDidChange = { [weak standalone] availability in
-            standalone?.presentation.show(availability: availability)
+        standalone.session.dirtyStateDidChange = { [weak standalone] _ in
             standalone?.updateTitle()
+            standalone?.refresh()
+        }
+        standalone.session.availabilityDidChange = { [weak standalone] _ in
+            standalone?.updateTitle()
+            standalone?.refresh()
         }
         standalone.session.conflictDidChange = { [weak self, weak standalone] conflict in
             guard let self, let standalone else { return }
             standalone.updateTitle()
+            standalone.refresh()
             self.presentConflict(conflict, for: standalone.session, in: standalone.window)
+        }
+        standalone.session.navigationStateDidChange = { [weak standalone] outline, progress, _ in
+            standalone?.showNavigation(outline: outline, progress: progress)
         }
         try await standalone.session.open(url)
         standalone.updateTitle()
+        standalone.refresh()
         standalone.window.makeKeyAndOrderFront(nil)
         standaloneWindows[url.standardizedFileURL] = standalone
     }

@@ -438,7 +438,7 @@ private struct PaperbranchLibraryNodeRows: View {
     }
 }
 
-private struct PaperbranchWebView: NSViewRepresentable {
+struct PaperbranchWebView: NSViewRepresentable {
     let webView: WKWebView
     func makeNSView(context: Context) -> PaperbranchWebViewCanvas { PaperbranchWebViewCanvas(webView: webView) }
     func updateNSView(_ nsView: PaperbranchWebViewCanvas, context: Context) {}
@@ -446,7 +446,7 @@ private struct PaperbranchWebView: NSViewRepresentable {
 
 /// SwiftUI owns the canvas host while this AppKit view owns the injected WebKit view's layout.
 /// Returning `WKWebView` directly left an already-loaded document accessible but unpainted.
-private final class PaperbranchWebViewCanvas: NSView {
+final class PaperbranchWebViewCanvas: NSView {
     private let webView: WKWebView
 
     init(webView: WKWebView) {

@@ -740,6 +740,42 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testStandaloneWindowShowsTheGuidelineChromeWithoutLibraryParts() async throws {
+        let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-chrome")
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let documentURL = folderURL.appendingPathComponent("Outside.md").standardizedFileURL
+        try "# Outside\n\n## Part\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let delegate = AppDelegate()
+        try await delegate.openStandaloneDocument(at: documentURL)
+        let standalone = try XCTUnwrap(delegate.standaloneWindows[documentURL])
+        defer { standalone.window.close() }
+
+        // Ticket 45: the top bar holds the window buttons and the document name, with the progress line below it.
+        XCTAssertTrue(standalone.window.styleMask.contains(.fullSizeContentView))
+        let current = renderedElements(of: standalone.window)
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.topbar", in: current)?.value(forKey: "accessibilityLabel") as? String, "Reader top bar for Outside.md")
+        XCTAssertNotNil(accessibilityElement("paperbranch.reader.progress", in: current))
+        XCTAssertNotNil(accessibilityElement("paperbranch.reader.document-canvas", in: current))
+        // No Library parts.
+        for libraryPart in ["paperbranch.reader.toggle-sidebar", "paperbranch.reader.open", "paperbranch.library.sidebar", "paperbranch.library.open-now"] {
+            XCTAssertNil(accessibilityElement(libraryPart, in: current), "\(libraryPart) in a Standalone window")
+        }
+
+        try await insertExclamationMark(in: standalone.coordinator)
+        for _ in 0..<40 where !standalone.session.isDirty { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(standalone.session.isDirty)
+        let edited = renderedElements(of: standalone.window)
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.topbar", in: edited)?.value(forKey: "accessibilityLabel") as? String, "Reader top bar for Outside.md, Edited")
+    }
+
+    @MainActor
+    private func renderedElements(of window: NSWindow) -> [NSObject] {
+        guard let root = window.contentView else { return [] }
+        root.layoutSubtreeIfNeeded()
+        return renderedAccessibilityElements(in: root)
+    }
+
+    @MainActor
     func testStandaloneWindowOpensAtDefaultContentSizeOnScreen() async throws {
         let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-size")
         defer { try? FileManager.default.removeItem(at: folderURL) }
@@ -2398,6 +2434,9 @@ private func renderedAccessibilityElements(in root: NSView) -> [NSObject] {
 /// SwiftUI's accessibility nodes do not bridge to `NSAccessibilityProtocol`, so the tree is read through key-value coding.
 @MainActor
 private func accessibilityDescendants(of element: NSObject) -> [NSObject] {
+    // Some web content nodes inside a loaded Document view do not answer this key, and the exception it raised
+    // aborted async tests inside XCTest's error handling ("freed pointer was not the last allocation").
+    guard element.responds(to: NSSelectorFromString("accessibilityChildren")) else { return [] }
     let children = element.value(forKey: "accessibilityChildren") as? [NSObject] ?? []
     return children.flatMap { [$0] + accessibilityDescendants(of: $0) }
 }
