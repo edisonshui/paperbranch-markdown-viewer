@@ -8,11 +8,14 @@ import SwiftUI
 struct PBWordmark: View {
     var body: some View {
         HStack(spacing: 9) {
-            Text("P")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(PBColor.markInk)
+            // The logo is the app icon itself, as macOS draws it, so the two always match.
+            // The icon's tile fills 824/1024 of its image, so a 31-point image gives a 25-point tile.
+            Image(nsImage: NSApplication.shared.applicationIconImage ?? NSImage())
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 31, height: 31)
                 .frame(width: 25, height: 25)
-                .background(PBColor.markBg, in: RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
             Text("Paperbranch")
                 .font(.system(size: 16, weight: .bold))
                 .tracking(-0.3)

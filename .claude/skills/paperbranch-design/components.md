@@ -46,8 +46,6 @@ enum PBColor {
     static let inkIcon = Color(light: "#808087", dark: "#7C7C84")
     static let inkOnStrong = Color(light: "#FFFFFF", dark: "#161618")
     static let accent = Color(light: "#2563EB", dark: "#5B8DEF")
-    static let markBg = Color(light: "#2563EB", dark: "#5B8DEF")
-    static let markInk = Color(light: "#FFFFFF", dark: "#0F1115")
     static let danger = Color(light: "#C4291C", dark: "#FF7B6E")
     static let dangerInk = Color(light: "#FFFFFF", dark: "#161618")
 }
@@ -86,17 +84,19 @@ enum PBMotion {
 
 ## Wordmark
 
-The wordmark is a fixed logo lockup at the top of the Library sidebar, so its sizes belong to the logo, not to the scale.
+The wordmark is a fixed logo lockup at the top of the Library sidebar, so its sizes belong to the logo, not to the scale. The logo is the app icon itself, so the sidebar and the Dock always match.
 
 ```swift
 struct PBWordmark: View {
     var body: some View {
         HStack(spacing: 9) {
-            Text("P")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundStyle(PBColor.markInk)
+            // The icon's tile fills 824/1024 of its image, so a 31-point image gives a 25-point tile.
+            Image(nsImage: NSApplication.shared.applicationIconImage ?? NSImage())
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 31, height: 31)
                 .frame(width: 25, height: 25)
-                .background(PBColor.markBg, in: RoundedRectangle(cornerRadius: 7))
+                .accessibilityHidden(true)
             Text("Paperbranch")
                 .font(.system(size: 16, weight: .bold))
                 .tracking(-0.3)

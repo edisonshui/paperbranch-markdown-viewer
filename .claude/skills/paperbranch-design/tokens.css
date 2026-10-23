@@ -39,8 +39,15 @@
   /* ---------- Accent: blue ---------- */
   --accent: light-dark(#2563EB, #5B8DEF);       /* Shape only: reading progress line, selected-row bar, current outline mark, focus ring. 4.2:1 or better on every surface */
   --accent-text: light-dark(#1D4ED8, #7EA7F5);  /* Links and inline code text. 6.7:1 light, 7.1:1 dark on paper */
-  --mark-bg: light-dark(#2563EB, #5B8DEF);      /* Wordmark "P" tile */
-  --mark-ink: light-dark(#FFFFFF, #0F1115);     /* The "P" on the tile. 5.2:1 light, 5.9:1 dark */
+
+  /* ---------- Logo ----------
+     Fixed colors, not light-dark(): the app icon looks the same in both appearances.
+     23 Oct 2026: Edison picked option G2, a page whose corner grows into a leaf, on navy. */
+  --logo-tile-top: #24324D;     /* Top of the tile's gradient */
+  --logo-tile-bottom: #111827;  /* Bottom of the tile's gradient */
+  --logo-page: #FFFFFF;         /* The page. 12.8:1 on the tile */
+  --logo-leaf: #5B8DEF;         /* The leaf and the fold line. Shape only: 4.0:1 on the tile, 3.2:1 on the page */
+  --logo-ink: #111113;          /* The New York Bold P on the page. 18.9:1 */
 
   /* ---------- Status ---------- */
   --danger: light-dark(#C4291C, #FF7B6E);       /* Warnings only: "Changed on disk", destructive buttons, missing-image outline. 5.7:1 on surface light, 6.0:1 dark */
