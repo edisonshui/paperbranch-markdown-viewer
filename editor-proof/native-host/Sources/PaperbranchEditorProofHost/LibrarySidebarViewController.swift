@@ -7,11 +7,13 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     var folderExpansionChanged: ((LibraryNode, Bool) -> Void)?
     var selectOutline: ((String) -> Void)?
     private let outlineView = NSOutlineView()
-    private let statusLabel = NSTextField(labelWithString: "Library access is unavailable. Reconnect or choose another Library.")
+    private let statusLabel = NSTextField(labelWithString: "")
     private let chooseButton = NSButton(title: "Choose Library…", target: nil, action: nil)
     private var library: LibraryBrowser?
     private let navigationStack = NSStackView()
     private let progressLabel = NSTextField(labelWithString: "Reading progress: 0%")
+    /// The id, text, and level of each outline button on screen, or nil before the first outline.
+    private var shownHeadings: [[String]]?
     /// Programmatic selection mirrors workflow state and must not route back as a user selection.
     private var isApplyingSelection = false
 
@@ -42,24 +44,61 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         scroll.hasVerticalScroller = true
 
         navigationStack.orientation = .vertical
+        navigationStack.alignment = .leading
         navigationStack.spacing = 2
+        navigationStack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 10, right: 10)
+        navigationStack.translatesAutoresizingMaskIntoConstraints = false
         let navigationHeader = NSTextField(labelWithString: "Document outline")
         navigationHeader.font = .systemFont(ofSize: 11, weight: .semibold)
         navigationStack.addArrangedSubview(navigationHeader)
         navigationStack.addArrangedSubview(progressLabel)
-        let stack = NSStackView(views: [header, scroll, navigationStack])
+        // A long outline scrolls inside its own area. As plain stack content, each heading's
+        // button raised the window's minimum height until the window ran past the screen.
+        let navigationContent = FlippedView()
+        navigationContent.translatesAutoresizingMaskIntoConstraints = false
+        navigationContent.addSubview(navigationStack)
+        let navigationScroll = NSScrollView()
+        navigationScroll.drawsBackground = false
+        navigationScroll.hasVerticalScroller = true
+        navigationScroll.documentView = navigationContent
+        NSLayoutConstraint.activate([
+            navigationContent.leadingAnchor.constraint(equalTo: navigationScroll.contentView.leadingAnchor),
+            navigationContent.trailingAnchor.constraint(equalTo: navigationScroll.contentView.trailingAnchor),
+            navigationContent.topAnchor.constraint(equalTo: navigationScroll.contentView.topAnchor),
+            navigationStack.leadingAnchor.constraint(equalTo: navigationContent.leadingAnchor),
+            navigationStack.trailingAnchor.constraint(equalTo: navigationContent.trailingAnchor),
+            navigationStack.topAnchor.constraint(equalTo: navigationContent.topAnchor),
+            navigationStack.bottomAnchor.constraint(equalTo: navigationContent.bottomAnchor),
+        ])
+        let stack = NSStackView(views: [header, scroll, navigationScroll])
         stack.orientation = .vertical
+        stack.spacing = 0
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
+        let fitOutline = navigationScroll.heightAnchor.constraint(equalTo: navigationStack.heightAnchor)
+        fitOutline.priority = .defaultLow
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor), stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor), stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            navigationScroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            // The Library tree keeps most of the sidebar, and the outline shrinks to fit a short document.
+            navigationScroll.heightAnchor.constraint(lessThanOrEqualTo: root.heightAnchor, multiplier: 0.4),
+            fitOutline,
         ])
+        scroll.setContentHuggingPriority(.defaultLow - 1, for: .vertical)
         scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
         view = root
     }
 
     func showDocumentNavigation(outline: [DocumentOutlineEntry], progress: Double) {
+        progressLabel.stringValue = "Reading progress: \(Int((max(0, min(1, progress)) * 100).rounded()))%"
+        // Scrolling past a heading changes only which entry is current, which this sidebar does not show. Rebuilding
+        // every button for it cost 33 ms with 35 headings, a visible scroll hitch (Ticket 50).
+        let headings = outline.map { [$0.id, $0.text, String($0.level)] }
+        guard headings != shownHeadings else { return }
+        shownHeadings = headings
         navigationStack.arrangedSubviews.dropFirst(2).forEach { navigationStack.removeArrangedSubview($0); $0.removeFromSuperview() }
         if outline.isEmpty {
             navigationStack.addArrangedSubview(NSTextField(labelWithString: "No headings in this document."))
@@ -72,7 +111,6 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
                 navigationStack.addArrangedSubview(button)
             }
         }
-        progressLabel.stringValue = "Reading progress: \(Int((max(0, min(1, progress)) * 100).rounded()))%"
     }
 
     @objc private func outlinePressed(_ sender: NSButton) { if let id = sender.identifier?.rawValue { selectOutline?(id) } }
@@ -91,12 +129,17 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         select(url: selectedDocumentURL)
     }
 
-    func showUnavailableLibrary() {
+    /// The AppKit fallback's version of the Library unavailable caption, in the design skill's words.
+    func showUnavailableLibrary(name: String? = nil) {
         library = nil
+        statusLabel.stringValue = "\(name ?? "The Library") is unavailable."
         statusLabel.isHidden = false
-        chooseButton.title = "Choose another Library…"
+        chooseButton.title = "Choose Another Library…"
         outlineView.reloadData()
     }
+
+    /// The document the outline view shows as selected.
+    var selectedDocumentURL: URL? { (outlineView.item(atRow: outlineView.selectedRow) as? LibraryNode)?.url }
 
     func select(url: URL?) {
         isApplyingSelection = true
@@ -155,4 +198,9 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         guard let node = notification.userInfo?["NSObject"] as? LibraryNode else { return }
         folderExpansionChanged?(node, false)
     }
+}
+
+/// Scroll content laid out from the top, so the outline starts at its first heading.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }

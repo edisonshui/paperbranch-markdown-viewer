@@ -71,3 +71,14 @@ test("reading progress follows long-document scroll position and documents witho
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect.poll(() => page.evaluate(() => window.editorContract.getReadingProgress())).toBeGreaterThan(0.99);
 });
+
+test("the current heading follows the reading position (Ticket 42)", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto("/");
+  const sections = Array.from({ length: 6 }, (_, i) => `## Part ${i + 1}\n\n${"A long paragraph that takes up room. ".repeat(40)}\n`).join("\n");
+  await page.evaluate((md) => window.editorContract.loadMarkdown(md), `# Title\n\n${sections}`);
+  expect(await page.evaluate(() => window.editorContract.getCurrentOutlineID())).toBe("heading-0");
+  // Scroll Part 3 (heading-3) to the top of the Document view.
+  await page.locator("#editor-root h2").nth(2).evaluate((h) => window.scrollTo(0, h.getBoundingClientRect().top + window.scrollY - 10));
+  await expect.poll(() => page.evaluate(() => window.editorContract.getCurrentOutlineID())).toBe("heading-3");
+});

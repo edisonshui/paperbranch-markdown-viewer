@@ -6,6 +6,7 @@ export interface EditorContract {
   getOutline(): Array<{ id: string; text: string; level: number }>;
   selectOutline(id: string): boolean;
   getReadingProgress(): number;
+  getCurrentOutlineID(): string | null;
   /** Test/observability hook mirroring the dirty state the native bridge
    * receives via `dirtyStateChanged` messages. */
   isDirty(): boolean;

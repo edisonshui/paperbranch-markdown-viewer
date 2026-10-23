@@ -4,15 +4,15 @@
 
 **Blocked by:** 03: Display local images safely; 05: Restore and refresh the Library; 06: Open Library and Standalone documents from Finder; 07: Add the document outline and reading progress; 09: Resolve external changes with unsaved edits.
 
-**Status:** in-progress
+**Status:** resolved
 
 - [x] Xcode produces a Paperbranch macOS application bundle that launches on the user's Mac.
 - [x] The built application works without an account, server, or internet connection.
 - [x] The application uses the Paperbranch name and contains no prototype switcher, Folio branding, sample documents, or browser file picker.
-- [ ] The Library window and Standalone windows match the approved Variant B visual direction at representative window sizes.
-- [ ] Visual verification covers an expanded and collapsed sidebar, a selected document, a long document, an empty Library, an unavailable Library, a dirty document, and a conflict.
+- [x] The Library window and Standalone windows match the Paperbranch brand guideline and design skill (which replaced Variant B on 22 Oct 2026) at representative window sizes.
+- [x] Visual verification covers an expanded and collapsed sidebar, a selected document, a long document, an empty Library, an unavailable Library, a dirty document, and a conflict.
 - [x] The complete application-workflow and editor-contract test suites pass against the packaged implementation.
-- [ ] A manual acceptance pass confirms choosing and restoring a Library, opening from Finder, direct formatted editing, local images, `Command-S`, clean external reloads, and dirty conflict resolution.
+- [x] A manual acceptance pass confirms choosing and restoring a Library, opening from Finder, direct formatted editing, local images, `Command-S`, clean external reloads, and dirty conflict resolution.
 - [x] The personal build adds no signing, notarization, installer, telemetry, update service, or public release configuration.
 - [x] The application can be copied to the user's Applications folder and launched again with its Library access and document behavior intact.
 
@@ -29,3 +29,27 @@ Verified 2026-09-21:
 - Manual acceptance: incomplete. The offline launch, Library restoration, and copied-app relaunch were exercised manually. The Finder routing, direct formatted editing, local-image display, Command-S, clean external reload, and dirty-conflict flows were exercised by the packaged native suite, not by a full manual pass.
 
 Implementation commit: `7d2b9cabb8ecc2195fc9024d2841ed870eb7160c`.
+
+Functional acceptance pass 2026-10-22, packaged app after Tickets 29 to 34, against a test Library in `/tmp` (nested folders, a 3,039-word essay with 60 headings, tables, code, task lists, a local image, a missing image, a front-matter document, a `.markdown` file). Driven through accessibility actions, `open`, and synthetic mouse and key events; "measured" means seen in the app.
+
+- Choosing and restoring a Library: measured. Chosen with File > Choose Library and the folder panel. Relaunches restored it with the previous selection and collapsed folders.
+- Opening from Finder: measured with `open -a`. A Library document (`Ideas.markdown`) opened in the Library window and was selected in the sidebar. An outside document opened in its own Standalone window at 800x640 content size.
+- Direct formatted editing: measured. Typed characters landed in the formatted paragraph, and the top bar showed "Edited".
+- Local images: measured. A relative PNG rendered; a missing image showed the broken-image placeholder.
+- `Command-S`: measured. It wrote the file and cleared "Edited" in the Variant B presentation (fixed in Ticket 30).
+- Clean external reload: measured. An atomic replacement on disk showed the new text in the open document.
+- Dirty conflict resolution: measured for Reload Disk. A dirty document changed on disk showed "Changed on disk" and the conflict alert, and Reload Disk loaded the disk version. Keep Editing and the later overwrite confirmation were not exercised by hand, because the pass stopped sending keystrokes once Edison was using the Mac. The packaged native suite covers both.
+- Also seen: deleting the open document showed the unavailable state without resizing the window, and the front-matter document showed the blocked message.
+
+Still open in this ticket: the Variant B visual-match items, deferred until the brand guideline decides the visual direction. Ticket 35 (unsaved edits on document switch) needs Edison's decision.
+
+Visual pass 2026-10-22 against the brand guideline (screenshots in `.scratch/paperbranch-brand/switch-over/`, gitignored, light and dark): Library window reading and editing, unsaved-edits prompt, conflict alert, overwrite warning, Document unavailable, No document selected, Choosing a Library, and Library unavailable all match `screens.md` and the guideline mockups after Tickets 39 to 44 and their follow-ups (`ec0d236` fixed Document unavailable after a Library refresh and the destructive Discard button).
+
+- The manual acceptance item is now complete. In the packaged app the visual pass chose Keep My Edits on a real conflict, saved, got the overwrite warning, and confirmed Overwrite, in both appearances. With the earlier functional pass, every listed flow has been exercised by hand.
+- Still open, needs Edison's visual check: the collapsed sidebar (Ticket 46's slide), Standalone windows (Ticket 45), an empty Library, and a window under the 1240 px outline breakpoint. Edison came back to the Mac before these were captured, so the two visual criteria stay unchecked.
+
+Edison's visual check 2026-10-23 in the running app, light and dark: the collapsed sidebar slides away in one smooth move with the text staying put (Ticket 46), Command-O opens an outside document in a Standalone window with no Library parts (Ticket 45), and below 1240 px the outline moves from the right panel to under the Library tree. Still open: an empty Library.
+
+Confirmed by Edison 2026-10-23 in the running app: an empty Library shows correctly, and switching from it back to the Sample Library works after Ticket 51. With the visual pass of 2026-10-22 and his checks above, every listed state has been seen in both appearances, so both visual criteria are met.
+
+Resolved 2026-10-23.

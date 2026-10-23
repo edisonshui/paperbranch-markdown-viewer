@@ -61,12 +61,10 @@ public final class FinderOpenWorkflow {
         guard DocumentSession.accepts(url) else { throw DocumentSessionError.unsupportedFile(url) }
         let documentURL = url.standardizedFileURL
         if sessions[documentURL] != nil {
-            focusedDocumentURL = documentURL
-            return .focused(try existingWindow(for: documentURL))
+            return focus(try existingWindow(for: documentURL))
         }
         if makeDocumentSession == nil, let existing = openWindows.first(where: { $0.documentURL == documentURL }) {
-            focusedDocumentURL = documentURL
-            return .focused(existing)
+            return focus(existing)
         }
 
         let opensInLibrary = isInLibrary(documentURL)
@@ -91,6 +89,14 @@ public final class FinderOpenWorkflow {
         openWindows.append(state)
         focusedDocumentURL = documentURL
         return .opened(state)
+    }
+
+    /// Choosing a Library clears its selection but leaves the document open in the Library window, so focusing that
+    /// document selects it again (Ticket 51).
+    private func focus(_ window: DocumentWindowState) -> FinderOpenResult {
+        if window.kind == .library, isInLibrary(window.documentURL) { libraryWorkflow.selectDocument(at: window.documentURL) }
+        focusedDocumentURL = window.documentURL
+        return .focused(window)
     }
 
     private func existingWindow(for url: URL) throws -> DocumentWindowState {

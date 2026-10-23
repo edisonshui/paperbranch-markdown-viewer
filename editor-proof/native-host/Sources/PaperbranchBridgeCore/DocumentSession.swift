@@ -40,8 +40,10 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
     public var dirtyStateDidChange: ((Bool) -> Void)?
     public var availabilityDidChange: ((DocumentAvailability) -> Void)?
     public var conflictDidChange: ((DocumentConflict?) -> Void)?
-    public var navigationStateDidChange: (([DocumentOutlineEntry], Double) -> Void)?
+    public var navigationStateDidChange: (([DocumentOutlineEntry], Double, Int?) -> Void)?
     private var lastDiskMarkdown: String?
+    /// Set by Keep Editing. The kept edits never replace the disk version without asking (user story 28, Ticket 37).
+    private var keptEditsOverDiskVersion = false
     private var fileChangeMonitor: FileChangeMonitor?
 
     public init(coordinator: BridgeCoordinator) {
@@ -64,6 +66,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         fileChangeMonitor?.cancel()
         fileURL = documentURL
         lastDiskMarkdown = markdown
+        keptEditsOverDiskVersion = false
         isDirty = false
         setConflict(nil)
         setAvailability(.available)
@@ -81,7 +84,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         guard let fileURL else { throw DocumentSessionError.noDocument }
         do {
             let currentDiskMarkdown = try String(contentsOf: fileURL, encoding: .utf8)
-            if currentDiskMarkdown != lastDiskMarkdown, !overwritingExternalChanges {
+            if currentDiskMarkdown != lastDiskMarkdown || keptEditsOverDiskVersion, !overwritingExternalChanges {
                 throw DocumentSessionError.overwriteConfirmationRequired(fileURL)
             }
             let markdown = try await coordinator.requestSave()
@@ -89,6 +92,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
             // The file monitor can reconcile during the await below, so it must already see this write as ours.
             lastDiskMarkdown = markdown
             try await coordinator.saveSucceeded(markdown: markdown)
+            keptEditsOverDiskVersion = false
             isDirty = false
             setConflict(nil)
             lastError = nil
@@ -105,14 +109,17 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         let markdown = try String(contentsOf: fileURL, encoding: .utf8)
         try await coordinator.loadDocument(markdown: markdown)
         lastDiskMarkdown = markdown
+        keptEditsOverDiskVersion = false
         isDirty = false
         setConflict(nil)
         setAvailability(.available)
     }
 
     /// Resolves the immediate prompt while retaining the in-memory Document
-    /// view. The latest disk baseline remains recorded for a later save.
+    /// view. The latest disk baseline remains recorded, and the next save asks
+    /// before replacing it.
     public func keepEditing() {
+        if conflict != nil { keptEditsOverDiskVersion = true }
         setConflict(nil)
     }
 
@@ -153,6 +160,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
             }
             guard try await coordinator.externalReplace(markdown: diskMarkdown) else { return }
             self.lastDiskMarkdown = diskMarkdown
+            keptEditsOverDiskVersion = false
             setAvailability(.available)
         } catch {
             if !isDirty { setAvailability(.unavailable) }
@@ -178,7 +186,7 @@ public final class DocumentSession: NSObject, BridgeCoordinatorDelegate {
         dirtyStateDidChange?(dirty)
     }
 
-    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double) {
-        navigationStateDidChange?(outline, progress)
+    public func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double, wordCount: Int?) {
+        navigationStateDidChange?(outline, progress, wordCount)
     }
 }

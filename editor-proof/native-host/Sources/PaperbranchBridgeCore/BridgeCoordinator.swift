@@ -1,7 +1,8 @@
+import AppKit
 import WebKit
 
 /// The narrow JS -> native messages the bridge accepts. The editor can push
-/// dirty state, document-outline entries, and reading progress, but never
+/// dirty state, document-outline entries, reading progress, and word count, but never
 /// document content, a file path, or anything resembling file access. See
 /// docs/specs/paperbranch-implementation.md ("Native and editor boundary").
 public enum BridgeError: Error {
@@ -13,13 +14,22 @@ public struct DocumentOutlineEntry: Equatable {
     public let id: String
     public let text: String
     public let level: Int
+    /// The heading the reader is in (Ticket 42).
+    public let isCurrent: Bool
+
+    public init(id: String, text: String, level: Int, isCurrent: Bool = false) {
+        self.id = id
+        self.text = text
+        self.level = level
+        self.isCurrent = isCurrent
+    }
 }
 
 @MainActor
 public protocol BridgeCoordinatorDelegate: AnyObject {
     func bridgeCoordinatorDidFinishLoadingHarness(_ coordinator: BridgeCoordinator)
     func bridgeCoordinator(_ coordinator: BridgeCoordinator, dirtyStateChanged dirty: Bool)
-    func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double)
+    func bridgeCoordinator(_ coordinator: BridgeCoordinator, navigationStateChanged outline: [DocumentOutlineEntry], progress: Double, wordCount: Int?)
 }
 
 /// Owns the one `WKWebView` this proof host displays and the fixed message
@@ -60,6 +70,7 @@ public final class BridgeCoordinator: NSObject {
         super.init()
         configuration.userContentController.add(self, name: Self.messageHandlerName)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
     }
 
     public func load(url: URL) {
@@ -171,14 +182,36 @@ extension BridgeCoordinator: WKScriptMessageHandler {
             isDirty = dirty
             delegate?.bridgeCoordinator(self, dirtyStateChanged: dirty)
         case "navigationStateChanged":
+            let currentOutlineID = body["currentOutlineID"] as? String
             let outline = (body["outline"] as? [[String: Any]] ?? []).compactMap { entry -> DocumentOutlineEntry? in
                 guard let id = entry["id"] as? String, let text = entry["text"] as? String, let level = entry["level"] as? Int else { return nil }
-                return DocumentOutlineEntry(id: id, text: text, level: level)
+                return DocumentOutlineEntry(id: id, text: text, level: level, isCurrent: id == currentOutlineID)
             }
             let progress = (body["progress"] as? NSNumber)?.doubleValue ?? 0
-            delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)))
+            let wordCount = (body["wordCount"] as? NSNumber)?.intValue
+            delegate?.bridgeCoordinator(self, navigationStateChanged: outline, progress: max(0, min(1, progress)), wordCount: wordCount)
         default:
             break
+        }
+    }
+}
+
+extension BridgeCoordinator: WKUIDelegate {
+    /// The formatting popover's link button asks for a URL with `window.prompt`, which WKWebView answers only here.
+    /// A web view outside a window answers nothing, as a cancelled prompt.
+    public func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+        guard let window = webView.window else { return completionHandler(nil) }
+        let alert = NSAlert()
+        alert.messageText = prompt
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.stringValue = defaultText ?? ""
+        field.placeholderString = "https://"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Add Link")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { response in
+            completionHandler(response == .alertFirstButtonReturn ? field.stringValue : nil)
         }
     }
 }

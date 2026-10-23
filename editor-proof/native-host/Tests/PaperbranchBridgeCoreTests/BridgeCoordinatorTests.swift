@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import WebKit
 import XCTest
 
@@ -30,15 +31,19 @@ import XCTest
 /// the Playwright suite uses before running `swift test`.
 final class BridgeCoordinatorTests: XCTestCase {
     @MainActor
-    func testPresentationActivatesOnlyForCleanExpandedLibraryDocumentAndOtherwiseRestoresAppKit() throws {
+    func testPresentationStaysInVariantBForRoutineStatesAndRestoresAppKitOnlyForUnavailableOrEmptyStates() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-guarded-presentation")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
         let documentURL = libraryURL.appendingPathComponent("Selected.md")
         try "# Selected\n".write(to: documentURL, atomically: true, encoding: .utf8)
         let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
         try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
-        try "# Nested\n".write(to: folderURL.appendingPathComponent("Nested.md"), atomically: true, encoding: .utf8)
+        let nestedURL = folderURL.appendingPathComponent("Nested.md")
+        try "# Nested\n".write(to: nestedURL, atomically: true, encoding: .utf8)
         let library = try LibraryBrowser.choose(libraryURL)
+        let emptyLibraryURL = try makeTemporaryDirectory(named: "paperbranch-guarded-presentation-empty")
+        defer { try? FileManager.default.removeItem(at: emptyLibraryURL) }
+        let emptyLibrary = try LibraryBrowser.choose(emptyLibraryURL)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720), styleMask: [.titled], backing: .buffered, defer: false)
         let appKitContent = NSView()
         window.contentView = appKitContent
@@ -54,27 +59,79 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertTrue(presentation.window === window)
         window.contentView?.layoutSubtreeIfNeeded()
         XCTAssertTrue(windowContainsView(window, target: webView))
+        let variantB = try XCTUnwrap(window.contentView)
 
+        // Editing, a conflict, a collapsed sidebar, and a document switch in progress are routine
+        // and stay in Variant B. Swapping the whole window for them made every keystroke and click jump.
         var collapsedSidebar = LibrarySidebarState()
         collapsedSidebar.toggleCollapsed()
-        var collapsedFolder = LibrarySidebarState()
-        collapsedFolder.setExpanded(try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder })), expanded: false)
-        let excludedStates: [PaperbranchWindowPresentationState] = [
+        let routineStates: [PaperbranchWindowPresentationState] = [
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(documentURL))),
-            .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: .externalChange(documentURL))),
             .init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: collapsedFolder, selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nestedURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
         ]
+        for state in routineStates {
+            XCTAssertTrue(presentation.render(state))
+            XCTAssertTrue(window.contentView === variantB)
+        }
 
+        // Ticket 43: a missing or empty Library and an unavailable document have designed state views in Variant B.
+        for state: PaperbranchWindowPresentationState in [
+            .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+            .init(library: emptyLibrary, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
+        ] {
+            XCTAssertTrue(presentation.render(state))
+            XCTAssertTrue(window.contentView === variantB)
+        }
+
+        let excludedStates: [PaperbranchWindowPresentationState] = [
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: libraryURL.appendingPathComponent("Elsewhere.md"), document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+        ]
         for state in excludedStates {
             XCTAssertFalse(presentation.render(state))
             XCTAssertTrue(window.contentView === appKitContent)
         }
+    }
+
+    @MainActor
+    func testReaderTopBarShowsUnsavedEditsAndConflictsAndCollapsedSidebarHidesOnlyTheSidebar() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-reader-document-status")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        func render(dirty: Bool, conflict: DocumentConflict?, sidebar: LibrarySidebarState = LibrarySidebarState()) throws -> [NSObject] {
+            XCTAssertTrue(presentation.render(.init(library: library, sidebarState: sidebar, selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: dirty, conflict: conflict))))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            return renderedAccessibilityElements(in: root)
+        }
+        func topBarLabel(_ elements: [NSObject]) -> String? {
+            accessibilityElement("paperbranch.reader.topbar", in: elements)?.value(forKey: "accessibilityLabel") as? String
+        }
+
+        XCTAssertEqual(topBarLabel(try render(dirty: false, conflict: nil)), "Reader top bar for Reading.md")
+        XCTAssertEqual(topBarLabel(try render(dirty: true, conflict: nil)), "Reader top bar for Reading.md, Edited")
+        XCTAssertEqual(topBarLabel(try render(dirty: true, conflict: .externalChange(documentURL))), "Reader top bar for Reading.md, Changed on disk")
+
+        var collapsed = LibrarySidebarState()
+        collapsed.toggleCollapsed()
+        let elements = try render(dirty: false, conflict: nil, sidebar: collapsed)
+        XCTAssertNil(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        XCTAssertNotNil(accessibilityElement("paperbranch.reader.document-canvas", in: elements))
+        let toggle = try XCTUnwrap(accessibilityElement("paperbranch.reader.toggle-sidebar", in: elements))
+        XCTAssertEqual(toggle.value(forKey: "accessibilityLabel") as? String, "Show Library sidebar")
+        // The window buttons sit at the top left, so the toggle moves clear of them.
+        let zoomButton = try XCTUnwrap(window.standardWindowButton(.zoomButton))
+        let zoomFrame = window.convertToScreen(zoomButton.convert(zoomButton.bounds, to: nil))
+        XCTAssertGreaterThan(accessibilityFrame(of: toggle).minX, zoomFrame.maxX)
     }
 
     @MainActor
@@ -139,7 +196,9 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
             XCTAssertTrue(window.titlebarAppearsTransparent)
             XCTAssertEqual(window.titleVisibility, .hidden)
-            XCTAssertFalse(toolbar.isVisible)
+            // An empty unified toolbar replaces the AppKit one, so the window buttons center in the top bar.
+            XCTAssertFalse(window.toolbar === toolbar)
+            XCTAssertTrue(window.toolbar?.items.isEmpty ?? false)
             XCTAssertEqual(window.title, "Reading.md")
             let root = try XCTUnwrap(window.contentView)
             XCTAssertEqual(root.frame.size, window.frame.size)
@@ -163,6 +222,7 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
             XCTAssertFalse(window.titlebarAppearsTransparent)
             XCTAssertEqual(window.titleVisibility, .visible)
+            XCTAssertTrue(window.toolbar === toolbar)
             XCTAssertTrue(toolbar.isVisible)
             XCTAssertEqual(window.title, "Reading.md")
             XCTAssertEqual(window.frame, chosenFrame)
@@ -186,12 +246,9 @@ final class BridgeCoordinatorTests: XCTestCase {
         let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
         let sidebar = LibrarySidebarViewController()
         _ = sidebar.view
-        // AppDelegate routes sidebar selections through routeFinderOpen, which restores AppKit first.
+        // AppDelegate routes sidebar selections through routeFinderOpen, which opens the document.
         var routedSelections: [URL] = []
-        sidebar.selectDocument = { url in
-            routedSelections.append(url)
-            presentation.restoreAppKitPresentation()
-        }
+        sidebar.selectDocument = { url in routedSelections.append(url) }
         let state = PaperbranchWindowPresentationState(
             library: library,
             sidebarState: LibrarySidebarState(),
@@ -239,6 +296,76 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryChromeFollowsTheAppearanceWithTokenColors() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-appearance")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+
+        // Ticket 41: the sidebar and wordmark follow the window's appearance with the design tokens.
+        for (appearance, wordmarkIsLight) in [(NSAppearance.Name.aqua, false), (.darkAqua, true)] {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: appearance)
+            let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+            XCTAssertTrue(presentation.render(.init(
+                library: library,
+                sidebarState: LibrarySidebarState(),
+                selectedDocumentURL: documentURL,
+                document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+            )))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(root.bitmapImageRepForCachingDisplay(in: root.bounds))
+            root.cacheDisplay(in: root.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / root.bounds.width
+            func pixel(_ point: NSPoint) -> NSColor? {
+                let row = root.isFlipped ? Int(point.y * scale) : bitmap.pixelsHigh - 1 - Int(point.y * scale)
+                return bitmap.colorAt(x: Int(point.x * scale), y: row)?.usingColorSpace(.sRGB)
+            }
+            func hex(_ color: NSColor?) -> String {
+                guard let color else { return "none" }
+                return String(format: "#%02X%02X%02X", Int((color.redComponent * 255).rounded()), Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()))
+            }
+            // The bitmap capture shifts colors in its own color space, so the reference is a --sidebar swatch
+            // captured the same way, under the same appearance.
+            let swatchWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40), styleMask: [.titled], backing: .buffered, defer: false)
+            swatchWindow.appearance = NSAppearance(named: appearance)
+            let swatch = NSHostingView(rootView: Rectangle().fill(PBColor.sidebar).frame(width: 40, height: 40))
+            swatchWindow.contentView = swatch
+            swatch.layoutSubtreeIfNeeded()
+            let swatchBitmap = try XCTUnwrap(swatch.bitmapImageRepForCachingDisplay(in: swatch.bounds))
+            swatch.cacheDisplay(in: swatch.bounds, to: swatchBitmap)
+            let reference = hex(swatchBitmap.colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB))
+            XCTAssertNotEqual(reference, "#FFFFFF", "the swatch did not render")
+            // An empty spot near the sidebar's bottom.
+            XCTAssertEqual(hex(pixel(NSPoint(x: 20, y: root.isFlipped ? root.bounds.height - 20 : 20))), reference, "\(appearance.rawValue) sidebar")
+
+            let wordmark = try XCTUnwrap(accessibilityElement("paperbranch.library.wordmark", in: renderedAccessibilityElements(in: root)))
+            let frame = root.convert(window.convertFromScreen(accessibilityFrame(of: wordmark)), from: nil)
+            var extreme: CGFloat = wordmarkIsLight ? 0 : 1
+            // The text starts after the 25-point tile and its 9-point gap.
+            for x in stride(from: frame.minX + 34, to: frame.maxX, by: 0.5) {
+                for y in stride(from: frame.minY, to: frame.maxY, by: 0.5) {
+                    guard let color = pixel(NSPoint(x: x, y: y)) else { continue }
+                    let luminance = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
+                    extreme = wordmarkIsLight ? max(extreme, luminance) : min(extreme, luminance)
+                }
+            }
+            if wordmarkIsLight { XCTAssertGreaterThan(extreme, 0.8, "dark wordmark ink") } else { XCTAssertLessThan(extreme, 0.2, "light wordmark ink") }
+        }
+    }
+
+    func testChromeUsesTokenColorsOnly() throws {
+        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PaperbranchBridgeCore")
+        for name in ["PaperbranchWindowPresentation.swift", "PaperbranchComponents.swift"] {
+            let source = try String(contentsOf: sources.appendingPathComponent(name), encoding: .utf8)
+            XCTAssertFalse(source.contains("Color(red:"), "\(name) has a raw color literal")
+        }
+    }
+
+    @MainActor
     func testExpandedLibraryPresentationShowsVariantBReaderChromeAroundInjectedDocumentView() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-reader-chrome")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
@@ -273,7 +400,8 @@ final class BridgeCoordinatorTests: XCTestCase {
         let sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
         let topBar = try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements))
         let canvas = try XCTUnwrap(accessibilityElement("paperbranch.reader.document-canvas", in: elements))
-        let footer = try XCTUnwrap(accessibilityElement("paperbranch.reader.footer", in: elements))
+        // The Document view ends the article with its own footer, so no SwiftUI footer is pinned to the window.
+        XCTAssertNil(accessibilityElement("paperbranch.reader.footer", in: elements))
         XCTAssertNotEqual(root.accessibilityIdentifier(), "paperbranch.library.sidebar")
         XCTAssertTrue(accessibilityDescendants(of: topBar).contains { $0.value(forKey: "accessibilityValue") as? String == "Reading.md" })
         XCTAssertTrue(accessibilityDescendants(of: canvas).contains { $0 === webView })
@@ -286,10 +414,12 @@ final class BridgeCoordinatorTests: XCTestCase {
         let webViewFrame = accessibilityFrame(of: webView)
         XCTAssertFalse(webViewFrame.isEmpty)
         XCTAssertTrue(canvasFrame.contains(webViewFrame))
-        XCTAssertLessThan(canvasFrame.width, readerColumn.width)
+        // The Document view spans the reader so its margins scroll and its scroll bar sits at the window's edge.
+        // The editor's own CSS keeps the article a centered 710-point column.
+        XCTAssertEqual(webViewFrame.width, readerColumn.width, accuracy: 1)
         XCTAssertEqual(canvasFrame.midX, readerColumn.midX, accuracy: 1)
         XCTAssertGreaterThanOrEqual(accessibilityFrame(of: topBar).minY, canvasFrame.maxY)
-        XCTAssertLessThanOrEqual(accessibilityFrame(of: footer).maxY, canvasFrame.minY)
+        XCTAssertEqual(canvasFrame.minY, rootFrame.minY, accuracy: 1)
 
         XCTAssertTrue(windowContainsView(window, target: webView))
         XCTAssertFalse(appKitDocumentView.constraints.contains { constraint in
@@ -298,7 +428,31 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testReaderSidebarToggleRestoresAppKitThenDelegatesToExistingSidebarWorkflow() throws {
+    func testSidebarSlidesInOneMediumDurationAndNotUnderReduceMotion() throws {
+        // Ticket 46: one --duration-medium slide, and no animation under Reduce Motion.
+        XCTAssertEqual(PaperbranchWindowPresentation.sidebarSlideDuration(reduceMotion: false), PBMotion.medium)
+        XCTAssertNil(PaperbranchWindowPresentation.sidebarSlideDuration(reduceMotion: true))
+
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-sidebar-slide")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document)))
+        let variantB = try XCTUnwrap(window.contentView)
+        var collapsed = LibrarySidebarState()
+        collapsed.toggleCollapsed()
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsed, selectedDocumentURL: documentURL, document: document)))
+        // The slide happens inside the same view: the window keeps its content and frame.
+        XCTAssertTrue(window.contentView === variantB)
+        XCTAssertTrue(presentation.isSidebarCollapsed)
+    }
+
+    @MainActor
+    func testReaderSidebarToggleKeepsVariantBAndDelegatesToExistingSidebarWorkflow() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-sidebar-toggle")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
         let documentURL = libraryURL.appendingPathComponent("Reading.md")
@@ -320,9 +474,10 @@ final class BridgeCoordinatorTests: XCTestCase {
             document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
         )))
 
+        let variantB = try XCTUnwrap(window.contentView)
         presentation.toggleSidebar()
 
-        XCTAssertTrue(window.contentView === appKitContent)
+        XCTAssertTrue(window.contentView === variantB)
         XCTAssertEqual(sidebarToggleCount, 1)
     }
 
@@ -362,12 +517,13 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
-    func testLibraryWindowIsDarkWhileStandaloneWindowsFollowTheSystem() throws {
+    func testLibraryAndStandaloneWindowsFollowTheSystemAppearance() throws {
         let libraryWindow = AppDelegate().makeLibraryWindow()
         defer { libraryWindow.setFrameAutosaveName("") }
         let standalone = StandaloneDocumentWindow(delegate: AppDelegate())
 
-        XCTAssertEqual(libraryWindow.appearance?.name, .darkAqua)
+        // Ticket 41 replaces Ticket 16's always-dark Library window: the design skill follows macOS.
+        XCTAssertNil(libraryWindow.appearance)
         XCTAssertNil(standalone.window.appearance)
     }
 
@@ -418,6 +574,233 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testCommandSSavesTheKeyWindowsDocumentBeforeTheDocumentViewSeesTheKey() async throws {
+        let folderURL = try makeTemporaryDirectory(named: "paperbranch-command-s")
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let documentURL = folderURL.appendingPathComponent("Outside.md").standardizedFileURL
+        try "# Outside\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let delegate = AppDelegate()
+        try await delegate.openStandaloneDocument(at: documentURL)
+        let standalone = try XCTUnwrap(delegate.standaloneWindows[documentURL])
+        defer { standalone.window.close() }
+        try await insertExclamationMark(in: standalone.coordinator)
+        for _ in 0..<40 where !standalone.session.isDirty { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(standalone.session.isDirty)
+        func key(_ flags: NSEvent.ModifierFlags) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: standalone.window.windowNumber, context: nil, characters: "s", charactersIgnoringModifiers: "s", isARepeat: false, keyCode: 1)!
+        }
+
+        // Other shortcuts and other windows pass through untouched.
+        XCTAssertNotNil(delegate.handleKeyDown(key([.command, .shift]), keyWindow: standalone.window))
+        XCTAssertNotNil(delegate.handleKeyDown(key([]), keyWindow: standalone.window))
+        XCTAssertNotNil(delegate.handleKeyDown(key(.command), keyWindow: NSWindow()))
+        XCTAssertTrue(standalone.session.isDirty)
+
+        // WKWebView claims every key equivalent while it has focus, and in the Variant B presentation
+        // its handback never reached the File menu, so Command-S is taken before the Document view.
+        XCTAssertNil(delegate.handleKeyDown(key(.command), keyWindow: standalone.window))
+        for _ in 0..<40 where standalone.session.isDirty { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertFalse(standalone.session.isDirty)
+        XCTAssertNotEqual(try String(contentsOf: documentURL, encoding: .utf8), "# Outside\n")
+    }
+
+    @MainActor
+    func testLinkPromptShowsASheetAndReturnsTheTypedURL() async throws {
+        let coordinator = BridgeCoordinator()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        // The test owns the window, so closing it must not release it a second time.
+        window.isReleasedWhenClosed = false
+        window.contentView = coordinator.webView
+        defer { window.close() }
+        coordinator.webView.loadHTMLString("<p>Prompt</p>", baseURL: nil)
+        for _ in 0..<40 where coordinator.webView.isLoading { try await Task.sleep(nanoseconds: 50_000_000) }
+
+        // The formatting popover's link button asks with window.prompt, which WKWebView answers only through its UI delegate.
+        let answer = Task { try await coordinator.webView.callAsyncJavaScript("return prompt('Link URL')", contentWorld: .page) as? String }
+        for _ in 0..<40 where window.attachedSheet == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        let sheet = try XCTUnwrap(window.attachedSheet, "window.prompt showed no sheet")
+        let field = try XCTUnwrap(sheet.contentView.flatMap { textFields(in: $0) }?.first { $0.isEditable })
+        field.stringValue = "https://example.com"
+        let add = try XCTUnwrap(sheet.contentView.flatMap { buttons(in: $0) }?.first { $0.title == "Add Link" })
+        add.performClick(nil)
+
+        let typed = try await answer.value
+        XCTAssertEqual(typed, "https://example.com")
+    }
+
+    private func textFields(in view: NSView) -> [NSTextField] {
+        ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap { textFields(in: $0) }
+    }
+
+    @MainActor
+    func testSwitchingAwayFromUnsavedEditsAsksToSaveCancelOrDiscard() async throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-switch-unsaved")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let a = libraryURL.appendingPathComponent("A.md").standardizedFileURL
+        let b = libraryURL.appendingPathComponent("B.md").standardizedFileURL
+        try "# A\n".write(to: a, atomically: true, encoding: .utf8)
+        try "# B\n".write(to: b, atomically: true, encoding: .utf8)
+        let workflow = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        try workflow.chooseLibrary(at: libraryURL)
+        let delegate = AppDelegate(libraryWorkflow: workflow)
+        delegate.setUpLibraryWindow()
+        let window = try XCTUnwrap(delegate.window)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        delegate.showLibrary()
+        let session = try XCTUnwrap(delegate.documentSession)
+
+        func waitFor(_ condition: () -> Bool) async throws {
+            for _ in 0..<80 where !condition() { try await Task.sleep(nanoseconds: 50_000_000) }
+        }
+        func open(_ url: URL) async throws {
+            delegate.routeFinderOpen([url])
+            try await waitFor { session.fileURL == url }
+            XCTAssertEqual(session.fileURL, url)
+        }
+        func makeDirty() async throws {
+            try await insertExclamationMark(in: session.coordinator)
+            try await waitFor { session.isDirty }
+            XCTAssertTrue(session.isDirty)
+        }
+        /// Selects `url` the way a sidebar click does, then answers the sheet that appears.
+        func switchTo(_ url: URL, answering title: String) async throws -> NSWindow {
+            delegate.sidebarController.select(url: url)
+            delegate.routeFinderOpen([url])
+            return try await answerSheet(title)
+        }
+        func answerSheet(_ title: String) async throws -> NSWindow {
+            try await waitFor { window.attachedSheet != nil }
+            let sheet = try XCTUnwrap(window.attachedSheet, "No alert appeared before \(title)")
+            let button = try XCTUnwrap(sheet.contentView.flatMap { buttons(in: $0) }?.first { $0.title == title })
+            button.performClick(nil)
+            try await waitFor { window.attachedSheet !== sheet }
+            return sheet
+        }
+        func assertStaysOn(_ url: URL, file: StaticString = #filePath, line: UInt = #line) async throws {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertEqual(session.fileURL, url, file: file, line: line)
+            XCTAssertTrue(session.isDirty, file: file, line: line)
+            XCTAssertEqual(workflow.selectedDocumentURL, url, file: file, line: line)
+            XCTAssertEqual(delegate.sidebarController.selectedDocumentURL, url, "The sidebar selection did not snap back", file: file, line: line)
+        }
+
+        try await open(a)
+        try await makeDirty()
+
+        // Cancel keeps the edited document, and the sidebar selection snaps back to it.
+        let alert = try await switchTo(b, answering: "Cancel")
+        XCTAssertEqual(Set(alert.contentView.flatMap { buttons(in: $0) }?.map(\.title).filter { !$0.isEmpty } ?? []), ["Save", "Cancel", "Discard"])
+        // Design skill, "Unsaved edits on switch or close": Save is the default and Discard is destructive.
+        let promptButtons = alert.contentView.flatMap { buttons(in: $0) } ?? []
+        XCTAssertEqual(promptButtons.first { $0.keyEquivalent == "\r" }?.title, "Save")
+        XCTAssertEqual(promptButtons.first { $0.title == "Discard" }?.hasDestructiveAction, true)
+        try await assertStaysOn(a)
+
+        // Discard switches without writing.
+        _ = try await switchTo(b, answering: "Discard")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A\n")
+
+        // Save writes, then switches.
+        try await open(a)
+        try await makeDirty()
+        _ = try await switchTo(b, answering: "Save")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertTrue(try String(contentsOf: a, encoding: .utf8).contains("!"))
+
+        // After a kept conflict, Save asks before overwriting (Ticket 37), and its Cancel cancels the switch.
+        try await open(a)
+        try await makeDirty()
+        try "# A changed elsewhere\n".write(to: a, atomically: true, encoding: .utf8)
+        // Ticket 44: the conflict alert's wording and buttons follow the design skill. Return keeps the edits.
+        try await waitFor { window.attachedSheet != nil }
+        let conflictSheet = try XCTUnwrap(window.attachedSheet)
+        let conflictTexts = (conflictSheet.contentView.map { textFields(in: $0) } ?? []).map(\.stringValue)
+        XCTAssertTrue(conflictTexts.contains("Changes conflict in A.md"))
+        XCTAssertTrue(conflictTexts.contains("This document changed on disk while you have unsaved edits. Keep your edits, or reload the version on disk and lose them."))
+        let conflictButtons = try XCTUnwrap(conflictSheet.contentView.flatMap { buttons(in: $0) }).filter { !$0.title.isEmpty }
+        XCTAssertEqual(Set(conflictButtons.map(\.title)), ["Keep My Edits", "Reload from Disk"])
+        XCTAssertEqual(conflictButtons.first { $0.keyEquivalent == "\r" }?.title, "Keep My Edits")
+        XCTAssertEqual(conflictButtons.first { $0.title == "Reload from Disk" }?.hasDestructiveAction, true)
+        _ = try await answerSheet("Keep My Edits")
+        // Escape also cancels the overwrite and writes nothing.
+        _ = try await switchTo(b, answering: "Save")
+        try await waitFor { window.attachedSheet != nil }
+        let escapeSheet = try XCTUnwrap(window.attachedSheet)
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: escapeSheet.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        // The test runner has no event loop to deliver queued events to the monitor, so it calls the monitor's logic.
+        XCTAssertTrue(AppDelegate.cancelOnEscape(escape, in: escapeSheet))
+        try await waitFor { window.attachedSheet !== escapeSheet }
+        XCTAssertFalse(window.attachedSheet === escapeSheet, "Escape did not dismiss the overwrite warning")
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+
+        // Return answers the default button, Cancel, and writes nothing.
+        _ = try await switchTo(b, answering: "Save")
+        try await waitFor { window.attachedSheet != nil }
+        let returnSheet = try XCTUnwrap(window.attachedSheet)
+        let returnKey = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: returnSheet.windowNumber, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        XCTAssertTrue(returnSheet.performKeyEquivalent(with: returnKey), "No button took Return")
+        try await waitFor { window.attachedSheet !== returnSheet }
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+        _ = try await switchTo(b, answering: "Save")
+        let overwriteAlert = try await answerSheet("Cancel")
+        // Return answers Cancel, so it writes nothing, and Overwrite is marked destructive (design skill, "Overwrite warning").
+        let overwriteButtons = try XCTUnwrap(overwriteAlert.contentView.flatMap { buttons(in: $0) }).filter { !$0.title.isEmpty }
+        XCTAssertEqual(overwriteButtons.first { $0.keyEquivalent == "\r" }?.title, "Cancel")
+        XCTAssertEqual(overwriteButtons.map(\.title), ["Cancel", "Overwrite"])
+        XCTAssertEqual(overwriteButtons.first { $0.title == "Overwrite" }?.hasDestructiveAction, true)
+        try await assertStaysOn(a)
+        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "# A changed elsewhere\n")
+        _ = try await switchTo(b, answering: "Save")
+        _ = try await answerSheet("Overwrite")
+        try await waitFor { session.fileURL == b }
+        XCTAssertEqual(session.fileURL, b)
+        XCTAssertFalse(try String(contentsOf: a, encoding: .utf8).contains("changed elsewhere"))
+    }
+
+    @MainActor
+    func testStandaloneWindowShowsTheGuidelineChromeWithoutLibraryParts() async throws {
+        let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-chrome")
+        defer { try? FileManager.default.removeItem(at: folderURL) }
+        let documentURL = folderURL.appendingPathComponent("Outside.md").standardizedFileURL
+        try "# Outside\n\n## Part\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let delegate = AppDelegate()
+        try await delegate.openStandaloneDocument(at: documentURL)
+        let standalone = try XCTUnwrap(delegate.standaloneWindows[documentURL])
+        defer { standalone.window.close() }
+
+        // Ticket 45: the top bar holds the window buttons and the document name. Ticket 49 moved the progress line
+        // into the Document view, so the chrome draws none of its own.
+        XCTAssertTrue(standalone.window.styleMask.contains(.fullSizeContentView))
+        let current = renderedElements(of: standalone.window)
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.topbar", in: current)?.value(forKey: "accessibilityLabel") as? String, "Reader top bar for Outside.md")
+        XCTAssertNil(accessibilityElement("paperbranch.reader.progress", in: current))
+        XCTAssertNotNil(accessibilityElement("paperbranch.reader.document-canvas", in: current))
+        // No Library parts.
+        for libraryPart in ["paperbranch.reader.toggle-sidebar", "paperbranch.reader.open", "paperbranch.library.sidebar", "paperbranch.library.open-now"] {
+            XCTAssertNil(accessibilityElement(libraryPart, in: current), "\(libraryPart) in a Standalone window")
+        }
+
+        try await insertExclamationMark(in: standalone.coordinator)
+        for _ in 0..<40 where !standalone.session.isDirty { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(standalone.session.isDirty)
+        let edited = renderedElements(of: standalone.window)
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.topbar", in: edited)?.value(forKey: "accessibilityLabel") as? String, "Reader top bar for Outside.md, Edited")
+    }
+
+    @MainActor
+    private func renderedElements(of window: NSWindow) -> [NSObject] {
+        guard let root = window.contentView else { return [] }
+        root.layoutSubtreeIfNeeded()
+        return renderedAccessibilityElements(in: root)
+    }
+
+    @MainActor
     func testStandaloneWindowOpensAtDefaultContentSizeOnScreen() async throws {
         let folderURL = try makeTemporaryDirectory(named: "paperbranch-standalone-size")
         defer { try? FileManager.default.removeItem(at: folderURL) }
@@ -464,6 +847,96 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryWindowRestoresTheFrameItHadInEitherPresentation() throws {
+        UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey)
+        defer { UserDefaults.standard.removeObject(forKey: libraryWindowFrameKey) }
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-frame-presentation")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Reading.md")
+        try "# Reading\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let state = PaperbranchWindowPresentationState(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: documentURL,
+            document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )
+        let chosenFrame = NSRect(x: 140, y: 110, width: 1180, height: 760)
+
+        // AppKit's frame autosave drops a visible toolbar's height when saving and adds it back when restoring.
+        // Variant B hides the toolbar, so a frame saved there grew by the toolbar's height at every launch.
+        for showsVariantB in [true, false] {
+            let firstLaunch = AppDelegate().makeLibraryWindow()
+            let presentation = PaperbranchWindowPresentation(window: firstLaunch, webView: WKWebView())
+            if showsVariantB { XCTAssertTrue(presentation.render(state)) }
+            firstLaunch.setFrame(chosenFrame, display: false)
+            firstLaunch.setFrameAutosaveName("")
+            // Toolbars sharing an identifier share visibility in one process. A relaunch starts with it visible.
+            firstLaunch.toolbar?.isVisible = true
+
+            let nextLaunch = AppDelegate().makeLibraryWindow()
+            defer { nextLaunch.setFrameAutosaveName("") }
+            XCTAssertEqual(nextLaunch.frame, chosenFrame, showsVariantB ? "Saved in Variant B" : "Saved in AppKit")
+        }
+    }
+
+    @MainActor
+    func testLongOutlineKeepsTheAppKitLibraryWindowFrameAndTreeVisible() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-long-outline")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        try "# Reading\n".write(to: libraryURL.appendingPathComponent("Reading.md"), atomically: true, encoding: .utf8)
+        let sidebar = LibrarySidebarViewController()
+        let split = NSSplitViewController()
+        split.addSplitViewItem(NSSplitViewItem(sidebarWithViewController: sidebar))
+        let detail = NSViewController()
+        detail.view = NSView()
+        split.addSplitViewItem(NSSplitViewItem(viewController: detail))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.contentViewController = split
+        window.setFrame(NSRect(x: 0, y: 0, width: 1300, height: 800), display: false)
+        let chosenFrame = window.frame
+        sidebar.show(try LibraryBrowser.choose(libraryURL))
+
+        let outline = (0..<60).map { DocumentOutlineEntry(id: "heading-\($0)", text: "Section \($0)", level: $0 % 2 + 1) }
+        sidebar.showDocumentNavigation(outline: outline, progress: 0)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(window.frame, chosenFrame)
+        let tree = try XCTUnwrap(descendants(of: sidebar.view).first { $0 is NSOutlineView }?.enclosingScrollView)
+        XCTAssertGreaterThanOrEqual(tree.frame.height, 200, "The outline squeezed the Library tree to \(tree.frame.height) points")
+        let firstHeading = try XCTUnwrap(descendants(of: sidebar.view).compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "heading-0" })
+        let sidebarFrame = sidebar.view.convert(sidebar.view.bounds, to: nil)
+        XCTAssertLessThan(firstHeading.convert(firstHeading.bounds, to: nil).minX - sidebarFrame.minX, 40, "Outline entries are not left-aligned")
+    }
+
+    @MainActor
+    func testLibrarySidebarOutlineIsNotRebuiltWhenOnlyTheCurrentHeadingChanges() throws {
+        // Ticket 50: scrolling past a heading reports a new current heading, and rebuilding every outline button for it
+        // cost 33 ms with 35 headings. The AppKit sidebar does not mark the current heading, so it keeps its buttons.
+        let sidebar = LibrarySidebarViewController()
+        _ = sidebar.view
+        func outline(current: Int) -> [DocumentOutlineEntry] {
+            (0..<35).map { DocumentOutlineEntry(id: "heading-\($0)", text: "Section \($0)", level: 2, isCurrent: $0 == current) }
+        }
+        func buttons() -> [NSButton] { descendants(of: sidebar.view).compactMap { $0 as? NSButton }.filter { $0.identifier?.rawValue.hasPrefix("heading-") == true } }
+        sidebar.showDocumentNavigation(outline: outline(current: 0), progress: 0)
+        let first = buttons()
+        XCTAssertEqual(first.count, 35)
+
+        sidebar.showDocumentNavigation(outline: outline(current: 1), progress: 0.4)
+        XCTAssertTrue(zip(first, buttons()).allSatisfy { $0 === $1 }, "A current-heading change rebuilt the outline buttons")
+        XCTAssertTrue(descendants(of: sidebar.view).contains { ($0 as? NSTextField)?.stringValue == "Reading progress: 40%" })
+
+        var renamed = outline(current: 1)
+        renamed[3] = DocumentOutlineEntry(id: "heading-3", text: "Renamed", level: 2)
+        sidebar.showDocumentNavigation(outline: renamed, progress: 0.4)
+        XCTAssertEqual(buttons().first { $0.identifier?.rawValue == "heading-3" }?.title, "  Renamed")
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap { descendants(of: $0) }
+    }
+
+    @MainActor
     func testLibraryToolbarSidebarItemRoutesThroughLibrarySidebarToggle() throws {
         let delegate = AppDelegate()
         let toolbar = NSToolbar(identifier: "PaperbranchToolbarTest-\(UUID().uuidString)")
@@ -507,9 +980,149 @@ final class BridgeCoordinatorTests: XCTestCase {
         let elements = renderedAccessibilityElements(in: try XCTUnwrap(window.contentView))
         XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-0", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Selected")
         XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-1", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Details")
-        XCTAssertEqual(try XCTUnwrap(accessibilityElement("paperbranch.reader.progress", in: elements)?.value(forKey: "accessibilityValue") as? Double), 0.42, accuracy: 0.001)
+        // Ticket 49: the Document view draws the progress line, so the chrome has none to re-render on scroll.
+        XCTAssertNil(accessibilityElement("paperbranch.reader.progress", in: elements))
         presentation.selectOutline(id: "heading-1")
         XCTAssertEqual(selectedOutlineID, "heading-1")
+    }
+
+    @MainActor
+    func testOutlineMovesToARightPanelInWideWindowsAndMarksTheCurrentHeading() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-outline-panel")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n\n## Details\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+
+        // Ticket 42: a right panel at 1240 px and wider, under the Library tree below that.
+        for (width, wide) in [(CGFloat(1300), true), (1100, false)] {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+            let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+            XCTAssertTrue(presentation.render(.init(
+                library: library,
+                sidebarState: LibrarySidebarState(),
+                selectedDocumentURL: documentURL,
+                document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil),
+                outline: [.init(id: "heading-0", text: "Selected", level: 1), .init(id: "heading-1", text: "Details", level: 2, isCurrent: true)]
+            )))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let elements = renderedAccessibilityElements(in: root)
+            let sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+            let inSidebar = accessibilityElement("paperbranch.library.outline.heading-1", in: accessibilityDescendants(of: sidebar))
+            let panel = accessibilityElement("paperbranch.reader.outline-panel", in: elements)
+            if wide {
+                let panel = try XCTUnwrap(panel, "no outline panel at \(width)")
+                XCTAssertNil(inSidebar)
+                let current = try XCTUnwrap(accessibilityElement("paperbranch.library.outline.heading-1", in: accessibilityDescendants(of: panel)))
+                XCTAssertEqual(current.value(forKey: "accessibilityValue") as? String, "Current heading")
+                let other = try XCTUnwrap(accessibilityElement("paperbranch.library.outline.heading-0", in: accessibilityDescendants(of: panel)))
+                XCTAssertNotEqual(other.value(forKey: "accessibilityValue") as? String, "Current heading")
+                // The panel sits on the window's right edge, 220 px wide.
+                let rootFrame = accessibilityFrame(of: root)
+                XCTAssertEqual(accessibilityFrame(of: panel).maxX, rootFrame.maxX, accuracy: 1)
+                XCTAssertEqual(accessibilityFrame(of: panel).width, PBSize.outlineWidth, accuracy: 1)
+            } else {
+                XCTAssertNil(panel, "outline panel shown at \(width)")
+                XCTAssertNotNil(inSidebar)
+            }
+        }
+    }
+
+    @MainActor
+    func testLibrarySidebarShowsOpenNowAboveCollapsibleFolders() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-open-now")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        try "# Nested\n".write(to: folderURL.appendingPathComponent("Nested.md"), atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        let folder = try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder }))
+
+        var folderChanges: [(URL, Bool)] = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView(), onSetFolderExpanded: { folderChanges.append(($0.url, $1)) })
+        let document = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: document, wordCount: 1240)))
+        var root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        var elements = renderedAccessibilityElements(in: root)
+        var sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        var labels = accessibilityDescendants(of: sidebar).compactMap { ($0.value(forKey: "accessibilityLabel") ?? $0.value(forKey: "accessibilityValue")) as? String }
+        // The tree is the Library's only navigation, so Variant B's flat items are gone.
+        for removed in ["All documents", "Favorites", "Recently opened"] {
+            XCTAssertFalse(labels.contains { $0.contains(removed) })
+        }
+        let openNow = try XCTUnwrap(accessibilityElement("paperbranch.library.open-now", in: elements))
+        XCTAssertEqual(openNow.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1,240 words")
+        var folderRow = try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements))
+        XCTAssertEqual(folderRow.value(forKey: "accessibilityLabel") as? String, "Folder: Folder, expanded")
+        // Accessibility frames use screen coordinates, so a higher row has a larger y.
+        XCTAssertGreaterThan(accessibilityFrame(of: openNow).minY, accessibilityFrame(of: folderRow).maxY)
+        XCTAssertTrue(labels.contains("Markdown document: Nested.md"))
+        _ = folderRow.perform(NSSelectorFromString("accessibilityPerformPress"))
+        XCTAssertEqual(folderChanges.map(\.0), [folder.url])
+        XCTAssertEqual(folderChanges.map(\.1), [false])
+
+        // A collapsed folder stays in the Variant B sidebar, hiding its documents until it is expanded again.
+        var collapsed = LibrarySidebarState()
+        collapsed.setExpanded(folder, expanded: false)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsed, selectedDocumentURL: documentURL, document: document, wordCount: 1)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        elements = renderedAccessibilityElements(in: root)
+        sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+        labels = accessibilityDescendants(of: sidebar).compactMap { $0.value(forKey: "accessibilityLabel") as? String }
+        XCTAssertFalse(labels.contains("Markdown document: Nested.md"))
+        XCTAssertEqual(accessibilityElement("paperbranch.library.open-now", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1 word")
+        folderRow = try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements))
+        XCTAssertEqual(folderRow.value(forKey: "accessibilityLabel") as? String, "Folder: Folder, collapsed")
+        _ = folderRow.perform(NSSelectorFromString("accessibilityPerformPress"))
+        XCTAssertEqual(folderChanges.map(\.1), [false, true])
+
+        // Unsaved edits add a dot and "Edited" to the card (Ticket 41, design skill "Open now card").
+        let edited = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: edited, wordCount: 1240)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertEqual(accessibilityElement("paperbranch.library.open-now", in: renderedAccessibilityElements(in: root))?.value(forKey: "accessibilityLabel") as? String, "Open now: Selected.md, 1,240 words, Edited")
+
+        // With no selection there is nothing open, so the card is hidden.
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: document, wordCount: 1240)))
+        root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        XCTAssertNil(accessibilityElement("paperbranch.library.open-now", in: renderedAccessibilityElements(in: root)))
+    }
+
+    @MainActor
+    func testLibraryDocumentRowsAreClickableAcrossTheRowLikeFolderRows() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-row-hit-area")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("A.md")
+        try "# A\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let folderURL = libraryURL.appendingPathComponent("Folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        let nestedURL = folderURL.appendingPathComponent("Nested.md")
+        try "# Nested\n".write(to: nestedURL, atomically: true, encoding: .utf8)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+        XCTAssertTrue(presentation.render(.init(
+            library: try LibraryBrowser.choose(libraryURL),
+            sidebarState: LibrarySidebarState(),
+            selectedDocumentURL: nestedURL,
+            document: .init(url: nestedURL, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        )))
+        let root = try XCTUnwrap(window.contentView)
+        root.layoutSubtreeIfNeeded()
+        let elements = renderedAccessibilityElements(in: root)
+
+        // Folder and A.md both sit at the Library's top level, and A.md is not selected, so it draws no background. A plain button only takes clicks on drawn text unless it has a content shape.
+        let folder = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.library.folder", in: elements)))
+        let document = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.library.document", in: elements)))
+        XCTAssertEqual(document.width, folder.width, accuracy: 1)
     }
 
     @MainActor
@@ -587,18 +1200,25 @@ final class BridgeCoordinatorTests: XCTestCase {
         presentation.selectDocument(at: documentURL)
         XCTAssertEqual(selectedDocumentURLs, [documentURL.standardizedFileURL])
 
+        // A collapsed sidebar keeps the empty reader in Variant B.
         var collapsedSidebar = LibrarySidebarState()
         collapsedSidebar.toggleCollapsed()
-        var collapsedFolder = LibrarySidebarState()
-        collapsedFolder.setExpanded(try XCTUnwrap(library.root.children.first(where: { $0.kind == .folder })), expanded: false)
-        let excludedStates: [PaperbranchWindowPresentationState] = [
+        XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil))))
+        XCTAssertNotNil(accessibilityElement("paperbranch.reader.empty", in: renderedAccessibilityElements(in: try XCTUnwrap(window.contentView))))
+
+        // Ticket 43: an empty Library, a hidden unavailable document, and a missing Library have state views in Variant B.
+        for state: PaperbranchWindowPresentationState in [
             .init(library: emptyLibrary, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: collapsedFolder, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(previousDocumentURL))),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
             .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+        ] {
+            XCTAssertTrue(presentation.render(state))
+            XCTAssertFalse(window.contentView === appKitContent)
+        }
+
+        let excludedStates: [PaperbranchWindowPresentationState] = [
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(previousDocumentURL))),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
         ]
@@ -686,7 +1306,7 @@ final class BridgeCoordinatorTests: XCTestCase {
         let session = DocumentSession(coordinator: coordinator)
         var outline: [DocumentOutlineEntry] = []
         var progress = -1.0
-        session.navigationStateDidChange = { receivedOutline, receivedProgress in
+        session.navigationStateDidChange = { receivedOutline, receivedProgress, _ in
             outline = receivedOutline
             progress = receivedProgress
         }
@@ -802,6 +1422,29 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectingTheOpenDocumentAfterSwitchingLibrariesSelectsItAgain() async throws {
+        // Ticket 51: choosing another Library clears the selection but leaves the document open in the Library window.
+        // Switching back and clicking that document only focused the window, so it stayed unselected and unshown.
+        let sampleURL = try makeTemporaryDirectory(named: "paperbranch-switch-sample")
+        let emptyURL = try makeTemporaryDirectory(named: "paperbranch-switch-empty")
+        defer { try? FileManager.default.removeItem(at: sampleURL); try? FileManager.default.removeItem(at: emptyURL) }
+        let documentURL = sampleURL.appendingPathComponent("project-ideas.md")
+        try "# Project ideas\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let library = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        let application = FinderOpenWorkflow(libraryWorkflow: library)
+        try library.chooseLibrary(at: sampleURL)
+        try await application.applicationDidReceiveFinderOpen([documentURL])
+        try library.chooseLibrary(at: emptyURL)
+        try library.chooseLibrary(at: sampleURL)
+        XCTAssertNil(library.selectedDocumentURL)
+
+        try await application.applicationDidReceiveFinderOpen([documentURL])
+
+        XCTAssertEqual(library.selectedDocumentURL, documentURL.standardizedFileURL)
+    }
+
+    @MainActor
     func testRunningApplicationOpensAndSavesSeparateFinderStandaloneDocuments() async throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-finder-standalone-library")
         let outsideURL = try makeTemporaryDirectory(named: "paperbranch-finder-outside")
@@ -868,6 +1511,100 @@ final class BridgeCoordinatorTests: XCTestCase {
         let restoredLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store))
         XCTAssertEqual(try restoredLaunch.restoreLibrary(), .restored)
         XCTAssertEqual(restoredLaunch.library?.rootURL, libraryURL.standardizedFileURL)
+    }
+
+    func testLibraryWorkflowReportsWhetherALibraryWasChosenAndWhichIsUnavailable() throws {
+        let store = TestLibraryBookmarkStore()
+        let firstLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: TestLibraryBookmarkCodec()))
+        XCTAssertEqual(try firstLaunch.restoreLibrary(), .unavailable)
+        XCTAssertEqual(firstLaunch.availability, .notChosen)
+
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library-availability")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        try firstLaunch.chooseLibrary(at: libraryURL)
+        XCTAssertEqual(firstLaunch.availability, .available)
+        firstLaunch.libraryAccessBecameUnavailable()
+        XCTAssertEqual(firstLaunch.availability, .unavailable(name: libraryURL.lastPathComponent))
+
+        try FileManager.default.removeItem(at: libraryURL)
+        let nextLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: TestLibraryBookmarkCodec()))
+        XCTAssertEqual(try nextLaunch.restoreLibrary(), .unavailable)
+        XCTAssertEqual(nextLaunch.availability, .unavailable(name: libraryURL.lastPathComponent))
+    }
+
+    @MainActor
+    func testLibraryWindowShowsTheDesignedStateViews() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-state-views")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        var actions: [String] = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(
+            window: window, webView: WKWebView(),
+            onOpen: { actions.append("open") },
+            onChooseLibrary: { actions.append("choose") },
+            onReconnect: { actions.append("reconnect") }
+        )
+        let clean = PaperbranchDocumentPresentationState(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        func render(_ state: PaperbranchWindowPresentationState) throws -> [NSObject] {
+            XCTAssertTrue(presentation.render(state))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            return renderedAccessibilityElements(in: root)
+        }
+        func labels(_ elements: [NSObject]) -> [String] {
+            elements.flatMap { [$0.value(forKey: "accessibilityLabel"), $0.value(forKey: "accessibilityValue")] }.compactMap { $0 as? String }
+        }
+        func press(_ title: String, in elements: [NSObject]) {
+            let button = elements.first { ($0.value(forKey: "accessibilityLabel") as? String) == title }
+            XCTAssertNotNil(button, "no \(title) button")
+            _ = button?.perform(NSSelectorFromString("accessibilityPerformPress"))
+        }
+
+        // Choosing a Library: first launch, inside the real Library window.
+        var elements = try render(.init(library: nil, libraryAvailability: .notChosen, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: clean))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Choose a Library")
+        XCTAssertTrue(labels(elements).contains("Pick a folder of Markdown documents. Paperbranch shows its folders in the sidebar and opens it again next time."))
+        XCTAssertNil(accessibilityElement("paperbranch.reader.open", in: elements))
+        // The state view sits below the top bar instead of covering it.
+        let stateFrame = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.reader.state", in: elements)))
+        let topBarFrame = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements)))
+        XCTAssertLessThanOrEqual(stateFrame.maxY, topBarFrame.minY + 1)
+        press("Open a Document…", in: elements)
+        press("Choose Library…", in: elements)
+        XCTAssertEqual(actions, ["open", "choose"])
+
+        // Library unavailable.
+        actions = []
+        elements = try render(.init(library: nil, libraryAvailability: .unavailable(name: "Essays"), sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: clean))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Library unavailable")
+        XCTAssertTrue(labels(elements).contains("Paperbranch can't reach Essays. The folder may have moved, or its drive may be disconnected."))
+        XCTAssertTrue(labels(elements).contains("Essays is unavailable."))
+        press("Choose Another Library…", in: elements)
+        press("Reconnect", in: elements)
+        XCTAssertEqual(actions, ["choose", "reconnect"])
+
+        // Document unavailable: the tree stays visible and usable.
+        let gone = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)
+        elements = try render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: gone))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Document unavailable")
+        XCTAssertTrue(labels(elements).contains("Selected.md may have been moved or deleted. Choose another document from the Library."))
+        XCTAssertNotNil(accessibilityElement("paperbranch.library.selected-document", in: elements))
+        XCTAssertNil(accessibilityElement("paperbranch.document.view", in: elements))
+
+        // A deleted document leaves the tree at the next refresh, which clears the selection. The open document
+        // is still this Library's, so the window keeps saying it is unavailable instead of falling back to no selection.
+        let deletedURL = libraryURL.appendingPathComponent("Deleted.md")
+        let deleted = PaperbranchDocumentPresentationState(url: deletedURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)
+        elements = try render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: deleted))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Document unavailable")
+        XCTAssertTrue(labels(elements).contains("Deleted.md may have been moved or deleted. Choose another document from the Library."))
+
+        // Unsaved work behind a missing Library stays visible in AppKit.
+        let dirty = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)
+        XCTAssertFalse(presentation.render(.init(library: nil, libraryAvailability: .unavailable(name: "Essays"), sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: dirty)))
     }
 
     @MainActor
@@ -1110,6 +1847,78 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testDocumentMetaLineFollowsAnExternalReload() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-document-meta")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("observed.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        let metaLine = "Array.from(document.querySelectorAll('#document-meta span'), (item) => item.textContent).join(' · ')"
+        let opened = try await coordinator.webView.evaluateJavaScript(metaLine) as? String
+        XCTAssertEqual(opened, "1 word · 1 min read")
+
+        try "# Changed outside Paperbranch\n".write(to: documentURL, atomically: false, encoding: .utf8)
+
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Changed outside Paperbranch")
+        XCTAssertTrue(reloaded)
+        let afterReload = try await coordinator.webView.evaluateJavaScript(metaLine) as? String
+        XCTAssertEqual(afterReload, "3 words · 1 min read")
+    }
+
+    @MainActor
+    func testNavigationWordCountMatchesTheMetaLineThroughEditSaveAndExternalReload() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-navigation-word-count")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("counted.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        var wordCount: Int?
+        session.navigationStateDidChange = { _, _, words in wordCount = words }
+        try await session.open(documentURL)
+        let metaWordCount = "Number(document.querySelector('#document-meta span').textContent.split(' ')[0])"
+        func assertWordCountMatchesMetaLine(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) async throws {
+            let meta = try await coordinator.webView.evaluateJavaScript(metaWordCount) as? Int
+            XCTAssertEqual(meta, expected, file: file, line: line)
+            XCTAssertEqual(wordCount, expected, file: file, line: line)
+        }
+        try await assertWordCountMatchesMetaLine(1)
+
+        _ = try await coordinator.webView.callAsyncJavaScript(
+            """
+            const root = document.querySelector('#editor-root .ProseMirror');
+            const heading = root.querySelector('h1');
+            root.focus();
+            const range = document.createRange();
+            range.selectNodeContents(heading);
+            range.collapse(false);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('insertText', false, ' and more');
+            return true;
+            """,
+            contentWorld: .page
+        )
+        let edited = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(edited)
+        try await assertWordCountMatchesMetaLine(3)
+        try await session.save()
+        try await assertWordCountMatchesMetaLine(3)
+
+        // An atomic replacement, because the save moved the file to a new inode that an in-place write would not signal.
+        try "# Changed outside of Paperbranch today\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let reloaded = try await pollMarkdown(in: coordinator, containing: "Changed outside")
+        XCTAssertTrue(reloaded)
+        try await assertWordCountMatchesMetaLine(5)
+    }
+
+    @MainActor
     func testCleanDocumentReloadsAfterAtomicReplacement() async throws {
         let directory = try makeTemporaryDirectory(named: "paperbranch-atomic-replacement")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1326,6 +2135,40 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), diskContent)
         XCTAssertTrue(session.isDirty)
         XCTAssertNil(session.conflict)
+    }
+
+    @MainActor
+    func testSaveAfterKeepingASingleConflictAsksBeforeOverwriting() async throws {
+        let directory = try makeTemporaryDirectory(named: "paperbranch-kept-conflict")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let documentURL = directory.appendingPathComponent("kept.md")
+        try "# Original\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let coordinator = makeCoordinator()
+        try await waitForHarnessReady(coordinator)
+        let session = DocumentSession(coordinator: coordinator)
+        try await session.open(documentURL)
+        try await insertExclamationMark(in: coordinator)
+        let becameDirty = try await pollIsDirty(coordinator, expecting: true)
+        XCTAssertTrue(becameDirty)
+        let keptContent = try await coordinator.requestSave()
+        let diskContent = "# Changed elsewhere\n"
+        try diskContent.write(to: documentURL, atomically: true, encoding: .utf8)
+        let becameConflicted = await pollConflict(of: session, expecting: .externalChange(documentURL))
+        XCTAssertTrue(becameConflicted)
+        session.keepEditing()
+
+        // User story 28 (Edison, 2026-10-22): keeping edits never authorizes a silent overwrite, even with no second change.
+        await XCTAssertThrowsErrorAsync { try await session.save() }
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), diskContent)
+        XCTAssertTrue(session.isDirty)
+
+        try await session.save(overwritingExternalChanges: true)
+        XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), keptContent)
+        XCTAssertFalse(session.isDirty)
+        XCTAssertNil(session.conflict)
+        // The overwrite settles the conflict, so the next save writes without asking.
+        try await session.save()
     }
 
     @MainActor
@@ -1664,6 +2507,9 @@ private func renderedAccessibilityElements(in root: NSView) -> [NSObject] {
 /// SwiftUI's accessibility nodes do not bridge to `NSAccessibilityProtocol`, so the tree is read through key-value coding.
 @MainActor
 private func accessibilityDescendants(of element: NSObject) -> [NSObject] {
+    // Some web content nodes inside a loaded Document view do not answer this key, and the exception it raised
+    // aborted async tests inside XCTest's error handling ("freed pointer was not the last allocation").
+    guard element.responds(to: NSSelectorFromString("accessibilityChildren")) else { return [] }
     let children = element.value(forKey: "accessibilityChildren") as? [NSObject] ?? []
     return children.flatMap { [$0] + accessibilityDescendants(of: $0) }
 }
@@ -1679,7 +2525,7 @@ private func accessibilityFrame(of element: NSObject) -> NSRect {
 }
 
 /// AppKit's user-defaults key for the Library window's frame autosave name.
-private let libraryWindowFrameKey = "NSWindow Frame PaperbranchLibraryWindow"
+private let libraryWindowFrameKey = AppDelegate.libraryWindowFrameKey
 
 @MainActor
 private func windowContainsView(_ window: NSWindow, target: NSView) -> Bool {
@@ -1704,6 +2550,10 @@ private struct TestLibraryBookmarkCodec: LibraryBookmarkCodec {
     func resolveBookmark(_ data: Data) throws -> URL {
         guard let path = String(data: data, encoding: .utf8) else { throw LibraryAccessError.unavailable }
         return URL(fileURLWithPath: path)
+    }
+
+    func libraryName(fromBookmark data: Data) -> String? {
+        String(data: data, encoding: .utf8).map { URL(fileURLWithPath: $0).lastPathComponent }
     }
 }
 
