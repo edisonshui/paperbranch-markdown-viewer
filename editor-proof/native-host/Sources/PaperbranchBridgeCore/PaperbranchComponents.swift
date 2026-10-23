@@ -268,7 +268,30 @@ struct PBWindowDragArea: NSViewRepresentable {
 }
 
 final class PBWindowDragView: NSView {
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    var doubleClickAction: () -> PBTitleBarDoubleClickAction = { PBTitleBarDoubleClickAction.current() }
+
+    // The top bar covers the transparent title bar, so a double-click here does what the title bar would.
+    override func mouseDown(with event: NSEvent) {
+        guard event.clickCount == 2 else { return window?.performDrag(with: event) ?? () }
+        switch doubleClickAction() {
+        case .zoom: window?.zoom(nil)
+        case .minimize: window?.miniaturize(nil)
+        case .none: break
+        }
+    }
+}
+
+/// The System Settings choice under "Double-click a window's title bar". Zoom is the macOS default.
+enum PBTitleBarDoubleClickAction: Equatable {
+    case zoom, minimize, none
+
+    static func current(_ defaults: UserDefaults = .standard) -> PBTitleBarDoubleClickAction {
+        switch defaults.string(forKey: "AppleActionOnDoubleClick") {
+        case "Minimize": return .minimize
+        case "None": return .none
+        default: return .zoom
+        }
+    }
 }
 
 /// "On this page": outline items at 12 px --ink-muted, indented 12 px per level. The current heading is
