@@ -95,7 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             onSetFolderExpanded: { [weak self] node, expanded in
                 self?.libraryWorkflow.setFolder(node, expanded: expanded)
                 self?.showLibrary()
-            }
+            },
+            onChooseLibrary: { [weak self] in self?.handleChooseLibrary() },
+            onReconnect: { [weak self] in self?.reconnectLibrary() }
         )
         coordinator.load(url: HarnessLocation.url)
         isApplicationReady = true
@@ -318,12 +320,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                 showLibrary()
                 if let selected = libraryWorkflow.selectedDocumentURL { routeFinderOpen([selected]) }
             case .unavailable:
-                sidebarController.showUnavailableLibrary()
+                sidebarController.showUnavailableLibrary(name: unavailableLibraryName)
                 refreshWindowPresentation()
             }
         } catch {
-            sidebarController.showUnavailableLibrary()
+            sidebarController.showUnavailableLibrary(name: unavailableLibraryName)
+            refreshWindowPresentation()
         }
+    }
+
+    private var unavailableLibraryName: String? {
+        if case let .unavailable(name) = libraryWorkflow.availability { return name }
+        return nil
+    }
+
+    /// The Library unavailable state's Reconnect: try the saved Library again, keeping the window as it is.
+    private func reconnectLibrary() {
+        restoreLibrary()
     }
 
     private func refreshLibraryIfNeeded() {
@@ -335,7 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
             // This intentionally does not touch documentSession. A lost
             // Library must never discard unsaved Document view edits.
             libraryWorkflow.libraryAccessBecameUnavailable()
-            sidebarController.showUnavailableLibrary()
+            sidebarController.showUnavailableLibrary(name: unavailableLibraryName)
             refreshWindowPresentation()
         }
     }
@@ -351,6 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
     private func refreshWindowPresentation() -> Bool {
         libraryPresentation.render(.init(
             library: libraryWorkflow.library,
+            libraryAvailability: libraryWorkflow.availability,
             sidebarState: libraryWorkflow.sidebarState,
             selectedDocumentURL: libraryWorkflow.selectedDocumentURL,
             document: .init(

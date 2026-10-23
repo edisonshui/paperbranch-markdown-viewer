@@ -77,11 +77,18 @@ final class BridgeCoordinatorTests: XCTestCase {
             XCTAssertTrue(window.contentView === variantB)
         }
 
-        let excludedStates: [PaperbranchWindowPresentationState] = [
+        // Ticket 43: a missing or empty Library and an unavailable document have designed state views in Variant B.
+        for state: PaperbranchWindowPresentationState in [
             .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
             .init(library: emptyLibrary, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
+        ] {
+            XCTAssertTrue(presentation.render(state))
+            XCTAssertTrue(window.contentView === variantB)
+        }
+
+        let excludedStates: [PaperbranchWindowPresentationState] = [
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: .init(url: documentURL, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: libraryURL.appendingPathComponent("Elsewhere.md"), document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil)),
         ]
@@ -1099,12 +1106,19 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertTrue(presentation.render(.init(library: library, sidebarState: collapsedSidebar, selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil))))
         XCTAssertNotNil(accessibilityElement("paperbranch.reader.empty", in: renderedAccessibilityElements(in: try XCTUnwrap(window.contentView))))
 
-        let excludedStates: [PaperbranchWindowPresentationState] = [
+        // Ticket 43: an empty Library, a hidden unavailable document, and a missing Library have state views in Variant B.
+        for state: PaperbranchWindowPresentationState in [
             .init(library: emptyLibrary, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
-            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(previousDocumentURL))),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)),
             .init(library: nil, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)),
+        ] {
+            XCTAssertTrue(presentation.render(state))
+            XCTAssertFalse(window.contentView === appKitContent)
+        }
+
+        let excludedStates: [PaperbranchWindowPresentationState] = [
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)),
+            .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: previousDocumentURL, kind: .library, availability: .available, isDirty: false, conflict: .externalChange(previousDocumentURL))),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: .init(url: nil, kind: .standalone, availability: .available, isDirty: false, conflict: nil)),
             .init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: nil),
         ]
@@ -1374,6 +1388,92 @@ final class BridgeCoordinatorTests: XCTestCase {
         let restoredLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store))
         XCTAssertEqual(try restoredLaunch.restoreLibrary(), .restored)
         XCTAssertEqual(restoredLaunch.library?.rootURL, libraryURL.standardizedFileURL)
+    }
+
+    func testLibraryWorkflowReportsWhetherALibraryWasChosenAndWhichIsUnavailable() throws {
+        let store = TestLibraryBookmarkStore()
+        let firstLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: TestLibraryBookmarkCodec()))
+        XCTAssertEqual(try firstLaunch.restoreLibrary(), .unavailable)
+        XCTAssertEqual(firstLaunch.availability, .notChosen)
+
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-library-availability")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        try firstLaunch.chooseLibrary(at: libraryURL)
+        XCTAssertEqual(firstLaunch.availability, .available)
+        firstLaunch.libraryAccessBecameUnavailable()
+        XCTAssertEqual(firstLaunch.availability, .unavailable(name: libraryURL.lastPathComponent))
+
+        try FileManager.default.removeItem(at: libraryURL)
+        let nextLaunch = LibraryWorkflow(bookmarks: LibraryAccess(store: store, codec: TestLibraryBookmarkCodec()))
+        XCTAssertEqual(try nextLaunch.restoreLibrary(), .unavailable)
+        XCTAssertEqual(nextLaunch.availability, .unavailable(name: libraryURL.lastPathComponent))
+    }
+
+    @MainActor
+    func testLibraryWindowShowsTheDesignedStateViews() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-state-views")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+        var actions: [String] = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1300, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+        let presentation = PaperbranchWindowPresentation(
+            window: window, webView: WKWebView(),
+            onOpen: { actions.append("open") },
+            onChooseLibrary: { actions.append("choose") },
+            onReconnect: { actions.append("reconnect") }
+        )
+        let clean = PaperbranchDocumentPresentationState(url: nil, kind: .library, availability: .available, isDirty: false, conflict: nil)
+        func render(_ state: PaperbranchWindowPresentationState) throws -> [NSObject] {
+            XCTAssertTrue(presentation.render(state))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            return renderedAccessibilityElements(in: root)
+        }
+        func labels(_ elements: [NSObject]) -> [String] {
+            elements.flatMap { [$0.value(forKey: "accessibilityLabel"), $0.value(forKey: "accessibilityValue")] }.compactMap { $0 as? String }
+        }
+        func press(_ title: String, in elements: [NSObject]) {
+            let button = elements.first { ($0.value(forKey: "accessibilityLabel") as? String) == title }
+            XCTAssertNotNil(button, "no \(title) button")
+            _ = button?.perform(NSSelectorFromString("accessibilityPerformPress"))
+        }
+
+        // Choosing a Library: first launch, inside the real Library window.
+        var elements = try render(.init(library: nil, libraryAvailability: .notChosen, sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: clean))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Choose a Library")
+        XCTAssertTrue(labels(elements).contains("Pick a folder of Markdown documents. Paperbranch shows its folders in the sidebar and opens it again next time."))
+        XCTAssertNil(accessibilityElement("paperbranch.reader.open", in: elements))
+        // The state view sits below the top bar instead of covering it.
+        let stateFrame = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.reader.state", in: elements)))
+        let topBarFrame = accessibilityFrame(of: try XCTUnwrap(accessibilityElement("paperbranch.reader.topbar", in: elements)))
+        XCTAssertLessThanOrEqual(stateFrame.maxY, topBarFrame.minY + 1)
+        press("Open a Document…", in: elements)
+        press("Choose Library…", in: elements)
+        XCTAssertEqual(actions, ["open", "choose"])
+
+        // Library unavailable.
+        actions = []
+        elements = try render(.init(library: nil, libraryAvailability: .unavailable(name: "Essays"), sidebarState: LibrarySidebarState(), selectedDocumentURL: nil, document: clean))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Library unavailable")
+        XCTAssertTrue(labels(elements).contains("Paperbranch can't reach Essays. The folder may have moved, or its drive may be disconnected."))
+        XCTAssertTrue(labels(elements).contains("Essays is unavailable."))
+        press("Choose Another Library…", in: elements)
+        press("Reconnect", in: elements)
+        XCTAssertEqual(actions, ["choose", "reconnect"])
+
+        // Document unavailable: the tree stays visible and usable.
+        let gone = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .unavailable, isDirty: false, conflict: nil)
+        elements = try render(.init(library: library, sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: gone))
+        XCTAssertEqual(accessibilityElement("paperbranch.reader.state", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Document unavailable")
+        XCTAssertTrue(labels(elements).contains("Selected.md may have been moved or deleted. Choose another document from the Library."))
+        XCTAssertNotNil(accessibilityElement("paperbranch.library.selected-document", in: elements))
+        XCTAssertNil(accessibilityElement("paperbranch.document.view", in: elements))
+
+        // Unsaved work behind a missing Library stays visible in AppKit.
+        let dirty = PaperbranchDocumentPresentationState(url: documentURL, kind: .library, availability: .available, isDirty: true, conflict: nil)
+        XCTAssertFalse(presentation.render(.init(library: nil, libraryAvailability: .unavailable(name: "Essays"), sidebarState: LibrarySidebarState(), selectedDocumentURL: documentURL, document: dirty)))
     }
 
     @MainActor
@@ -2316,6 +2416,10 @@ private struct TestLibraryBookmarkCodec: LibraryBookmarkCodec {
     func resolveBookmark(_ data: Data) throws -> URL {
         guard let path = String(data: data, encoding: .utf8) else { throw LibraryAccessError.unavailable }
         return URL(fileURLWithPath: path)
+    }
+
+    func libraryName(fromBookmark data: Data) -> String? {
+        String(data: data, encoding: .utf8).map { URL(fileURLWithPath: $0).lastPathComponent }
     }
 }
 

@@ -7,7 +7,7 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     var folderExpansionChanged: ((LibraryNode, Bool) -> Void)?
     var selectOutline: ((String) -> Void)?
     private let outlineView = NSOutlineView()
-    private let statusLabel = NSTextField(labelWithString: "Library access is unavailable. Reconnect or choose another Library.")
+    private let statusLabel = NSTextField(labelWithString: "")
     private let chooseButton = NSButton(title: "Choose Library…", target: nil, action: nil)
     private var library: LibraryBrowser?
     private let navigationStack = NSStackView()
@@ -122,10 +122,12 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
         select(url: selectedDocumentURL)
     }
 
-    func showUnavailableLibrary() {
+    /// The AppKit fallback's version of the Library unavailable caption, in the design skill's words.
+    func showUnavailableLibrary(name: String? = nil) {
         library = nil
+        statusLabel.stringValue = "\(name ?? "The Library") is unavailable."
         statusLabel.isHidden = false
-        chooseButton.title = "Choose another Library…"
+        chooseButton.title = "Choose Another Library…"
         outlineView.reloadData()
     }
 

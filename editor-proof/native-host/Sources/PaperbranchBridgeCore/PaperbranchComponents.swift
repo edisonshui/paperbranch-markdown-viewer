@@ -323,3 +323,58 @@ struct PBOutlinePanel: View {
         .accessibilityIdentifier("paperbranch.reader.outline-panel")
     }
 }
+
+/// Choosing a Library, Library unavailable, and Document unavailable: an icon tile, a title, one sentence,
+/// and up to two buttons with the main action on the right as the primary.
+struct PBStateView: View {
+    struct Action {
+        let title: String
+        let perform: () -> Void
+    }
+
+    let symbol: String
+    let title: String
+    let message: String
+    var secondary: Action? = nil
+    var primary: Action? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(systemName: symbol)
+                .font(.system(size: 22))
+                .foregroundStyle(PBColor.inkIcon)
+                .frame(width: 52, height: 52)
+                .background(PBColor.surface, in: RoundedRectangle(cornerRadius: PBSize.radiusL))
+                .overlay { RoundedRectangle(cornerRadius: PBSize.radiusL).strokeBorder(PBColor.border) }
+                .padding(.bottom, PBSize.space4)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.system(size: PBSize.textUILarge, weight: .semibold))
+                .foregroundStyle(PBColor.inkStrong)
+                .padding(.bottom, PBSize.space2)
+            Text(message)
+                .font(.system(size: PBSize.textUI))
+                .foregroundStyle(PBColor.inkMuted)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+                .padding(.bottom, PBSize.space5)
+            HStack(spacing: PBSize.space3) {
+                if let secondary {
+                    Button(secondary.title, action: secondary.perform).buttonStyle(PBButtonStyle(role: .secondary))
+                }
+                if let primary {
+                    Button(primary.title, action: primary.perform)
+                        .buttonStyle(PBButtonStyle(role: .primary))
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(.bottom, PBSize.space8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // A Color background reaches into the safe area by default, which would paint over the top bar above it.
+        .background(PBColor.paper, ignoresSafeAreaEdges: [])
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("paperbranch.reader.state")
+    }
+}

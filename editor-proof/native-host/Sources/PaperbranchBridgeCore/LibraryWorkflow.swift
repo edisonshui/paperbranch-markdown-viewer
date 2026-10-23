@@ -44,6 +44,14 @@ public final class UserDefaultsLibraryBookmarkStore: LibraryBookmarkStore {
 public protocol LibraryBookmarkCodec {
     func makeBookmark(for url: URL) throws -> Data
     func resolveBookmark(_ data: Data) throws -> URL
+    /// The Library folder's name, read from the bookmark without resolving it, for the Library unavailable state.
+    func libraryName(fromBookmark data: Data) -> String?
+}
+
+extension LibraryBookmarkCodec {
+    public func libraryName(fromBookmark data: Data) -> String? {
+        URL.resourceValues(forKeys: [.nameKey], fromBookmarkData: data)?.name
+    }
 }
 
 public struct SecurityScopedLibraryBookmarkCodec: LibraryBookmarkCodec {
@@ -116,6 +124,12 @@ public final class LibraryAccess {
 
     public func clear() { stopAccessing(); store.clear() }
 
+    /// The saved Library's name, or nil when no Library was ever chosen.
+    public func savedLibraryName() -> String? {
+        guard let record = store.load() else { return nil }
+        return codec.libraryName(fromBookmark: record.bookmark) ?? "Your Library"
+    }
+
     private func startAccessing(_ url: URL) {
         stopAccessing()
         _ = url.startAccessingSecurityScopedResource()
@@ -133,6 +147,13 @@ public enum LibraryRestoreStatus: Equatable {
     case unavailable
 }
 
+/// Whether a Library was ever chosen, and which one cannot be reached (Ticket 43).
+public enum LibraryAvailability: Equatable {
+    case notChosen
+    case available
+    case unavailable(name: String)
+}
+
 /// Observable application-workflow state. The AppKit shell presents this in
 /// its sidebar, while tests can drive it with real folders without relying on
 /// private view-controller details.
@@ -140,6 +161,7 @@ public final class LibraryWorkflow {
     private let bookmarks: LibraryAccess
     public private(set) var library: LibraryBrowser?
     public private(set) var selectedDocumentURL: URL?
+    public private(set) var availability: LibraryAvailability = .notChosen
     public var sidebarState = LibrarySidebarState()
 
     public init(bookmarks: LibraryAccess = LibraryAccess()) { self.bookmarks = bookmarks }
@@ -147,6 +169,7 @@ public final class LibraryWorkflow {
     public func chooseLibrary(at url: URL) throws {
         let rootURL = try bookmarks.choose(url)
         library = try LibraryBrowser.choose(rootURL)
+        availability = .available
         selectedDocumentURL = nil
         sidebarState = LibrarySidebarState()
         persistState()
@@ -156,12 +179,14 @@ public final class LibraryWorkflow {
         do {
             let restored = try bookmarks.restore()
             library = try LibraryBrowser.choose(restored.url)
+            availability = .available
             selectedDocumentURL = restored.record.selectedDocumentURL
             sidebarState.restore(isCollapsed: restored.record.isSidebarCollapsed, collapsedFolders: restored.record.collapsedFolderURLs)
             preserveValidSidebarState()
             return .restored
         } catch {
             library = nil
+            availability = bookmarks.savedLibraryName().map { .unavailable(name: $0) } ?? .notChosen
             return .unavailable
         }
     }
@@ -197,6 +222,7 @@ public final class LibraryWorkflow {
     }
 
     public func libraryAccessBecameUnavailable() {
+        availability = .unavailable(name: library?.root.url.lastPathComponent ?? bookmarks.savedLibraryName() ?? "Your Library")
         library = nil
     }
 

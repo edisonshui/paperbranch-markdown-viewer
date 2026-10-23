@@ -22,6 +22,8 @@ public struct PaperbranchDocumentPresentationState {
 /// Snapshot consumed by the window-presentation seam. A missing document means a pending open or an empty Library.
 public struct PaperbranchWindowPresentationState {
     public let library: LibraryBrowser?
+    /// Why there is no Library, when there is none: never chosen, or chosen and unreachable.
+    public let libraryAvailability: LibraryAvailability
     public let sidebarState: LibrarySidebarState
     public let selectedDocumentURL: URL?
     public let document: PaperbranchDocumentPresentationState?
@@ -32,6 +34,7 @@ public struct PaperbranchWindowPresentationState {
 
     public init(
         library: LibraryBrowser?,
+        libraryAvailability: LibraryAvailability? = nil,
         sidebarState: LibrarySidebarState,
         selectedDocumentURL: URL?,
         document: PaperbranchDocumentPresentationState?,
@@ -40,6 +43,7 @@ public struct PaperbranchWindowPresentationState {
         wordCount: Int? = nil
     ) {
         self.library = library
+        self.libraryAvailability = library != nil ? .available : libraryAvailability ?? .notChosen
         self.sidebarState = sidebarState
         self.selectedDocumentURL = selectedDocumentURL?.standardizedFileURL
         self.document = document
@@ -60,6 +64,8 @@ public final class PaperbranchWindowPresentation {
     private let onToggleSidebar: () -> Void
     private let onOpen: () -> Void
     private let onSetFolderExpanded: (LibraryNode, Bool) -> Void
+    private let onChooseLibrary: () -> Void
+    private let onReconnect: () -> Void
     private let restoreAppKitContent: () -> Void
     private let appKitContentViewController: NSViewController?
     private let appKitContentView: NSView?
@@ -84,7 +90,9 @@ public final class PaperbranchWindowPresentation {
         restoreAppKitContent: @escaping () -> Void = {},
         onToggleSidebar: @escaping () -> Void = {},
         onOpen: @escaping () -> Void = {},
-        onSetFolderExpanded: @escaping (LibraryNode, Bool) -> Void = { _, _ in }
+        onSetFolderExpanded: @escaping (LibraryNode, Bool) -> Void = { _, _ in },
+        onChooseLibrary: @escaping () -> Void = {},
+        onReconnect: @escaping () -> Void = {}
     ) {
         self.window = window
         self.webView = webView
@@ -93,6 +101,8 @@ public final class PaperbranchWindowPresentation {
         self.restoreAppKitContent = restoreAppKitContent
         self.onToggleSidebar = onToggleSidebar
         self.onOpen = onOpen
+        self.onChooseLibrary = onChooseLibrary
+        self.onReconnect = onReconnect
         self.onSetFolderExpanded = onSetFolderExpanded
         appKitContentViewController = window.contentViewController
         appKitContentView = window.contentView
@@ -100,20 +110,18 @@ public final class PaperbranchWindowPresentation {
     }
 
     /// Returns whether SwiftUI is visible. An ineligible snapshot restores AppKit before the caller can display that state.
-    /// Unsaved edits, a conflict, a collapsed sidebar, and a document switch still loading all stay in Variant B,
-    /// because swapping the whole window for them made editing and switching jump. AppKit covers only a missing or
-    /// empty Library, an unavailable document, and unsaved work behind the empty reader, which Variant B has no state for.
+    /// Every Library window state has a Variant B home: editing, conflicts, a collapsed sidebar, a switch still loading,
+    /// and the state views for a missing Library, an empty Library, and an unavailable document (Ticket 43). AppKit
+    /// covers only unsaved work that a state view or the empty reader would hide, a Standalone snapshot, no document
+    /// session yet, and a selection outside the Library.
     @discardableResult
     public func render(_ state: PaperbranchWindowPresentationState) -> Bool {
         let documentURLs = Set(state.library?.root.flattened().compactMap { $0.kind == .document ? $0.url : nil } ?? [])
-        guard let library = state.library,
-              let document = state.document,
+        let hidesOpenDocument = state.library == nil || state.selectedDocumentURL == nil
+        guard let document = state.document,
               document.kind == .library,
-              !documentURLs.isEmpty,
-              state.selectedDocumentURL.map(documentURLs.contains) ?? true,
-              document.availability == .available,
-              // The empty reader hides the open document, so unsaved work there stays visible in AppKit.
-              state.selectedDocumentURL != nil || (!document.isDirty && document.conflict == nil)
+              state.library == nil || (state.selectedDocumentURL.map(documentURLs.contains) ?? true),
+              !(hidesOpenDocument && (document.isDirty || document.conflict != nil))
         else {
             restoreAppKitPresentation()
             return false
@@ -126,9 +134,18 @@ public final class PaperbranchWindowPresentation {
         let outline = state.selectedDocumentURL == nil ? [] : state.outline
         renderedDocumentURLs = documentURLs
         renderedOutlineIDs = Set(outline.map(\.id))
-        renderedFolderURLs = Set(library.root.flattened().compactMap { $0.kind == .folder ? $0.url : nil })
+        renderedFolderURLs = Set(state.library?.root.flattened().compactMap { $0.kind == .folder ? $0.url : nil } ?? [])
+        let content: PaperbranchReaderContent
+        if state.library == nil {
+            if case let .unavailable(name) = state.libraryAvailability { content = .libraryUnavailable(name: name) } else { content = .choosingLibrary }
+        } else if let selected = state.selectedDocumentURL {
+            content = showsSelectedDocument && document.availability == .unavailable ? .documentUnavailable(name: selected.lastPathComponent) : .document
+        } else {
+            content = .noSelection
+        }
         hostingView.rootView = AnyView(PaperbranchLibraryWindowView(
-            library: library,
+            library: state.library,
+            content: content,
             sidebarState: state.sidebarState,
             selectedDocumentURL: state.selectedDocumentURL,
             documentStatus: documentStatus,
@@ -142,7 +159,9 @@ public final class PaperbranchWindowPresentation {
             selectOutline: selectOutline(id:),
             setFolder: setFolder(_:expanded:),
             toggleSidebar: toggleSidebar,
-            open: open
+            open: open,
+            chooseLibrary: onChooseLibrary,
+            reconnect: onReconnect
         ))
         hostingView.setAccessibilityLabel("Paperbranch Library")
         hostingView.setAccessibilityIdentifier("paperbranch.library.window")
@@ -220,8 +239,23 @@ public final class PaperbranchWindowPresentation {
     }
 }
 
+/// What the reader shows below the top bar.
+private enum PaperbranchReaderContent: Equatable {
+    case choosingLibrary
+    case libraryUnavailable(name: String)
+    case noSelection
+    case documentUnavailable(name: String)
+    case document
+
+    var isDocumentUnavailable: Bool {
+        if case .documentUnavailable = self { return true }
+        return false
+    }
+}
+
 private struct PaperbranchLibraryWindowView: View {
-    let library: LibraryBrowser
+    let library: LibraryBrowser?
+    let content: PaperbranchReaderContent
     let sidebarState: LibrarySidebarState
     let selectedDocumentURL: URL?
     let documentStatus: PBDocumentStatus?
@@ -236,6 +270,8 @@ private struct PaperbranchLibraryWindowView: View {
     let setFolder: (LibraryNode, Bool) -> Void
     let toggleSidebar: () -> Void
     let open: () -> Void
+    let chooseLibrary: () -> Void
+    let reconnect: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -262,6 +298,15 @@ private struct PaperbranchLibraryWindowView: View {
                     // The window buttons fill the top bar's row above the wordmark.
                     .padding(.top, PBSize.topbarHeight)
                     .padding(.bottom, PBSize.space2)
+                // Choosing a Library shows the wordmark only; Library unavailable adds the label and one caption.
+                if case let .libraryUnavailable(name) = content {
+                    PBSectionLabel(text: "Library")
+                    Text("\(name) is unavailable.")
+                        .font(.system(size: PBSize.textCaption))
+                        .foregroundStyle(PBColor.inkMuted)
+                        .padding(.horizontal, PBSize.space2)
+                }
+                if let library {
                 // Open now sits above the tree so a long Library cannot push it out of view.
                 if let selectedDocumentURL {
                     PBSectionLabel(text: "Open now")
@@ -275,6 +320,7 @@ private struct PaperbranchLibraryWindowView: View {
                 if showsOutline && !outline.isEmpty {
                     PBOutlineRows(entries: outline, select: selectOutline)
                         .padding(.top, PBSize.space3)
+                }
                 }
             }
             .padding(.horizontal, PBSize.space2)
@@ -292,18 +338,43 @@ private struct PaperbranchLibraryWindowView: View {
     private func reader(showsOutlinePanel: Bool) -> some View {
         VStack(spacing: 0) {
             PBTopBar(
-                title: selectedDocumentURL?.lastPathComponent,
-                status: documentStatus,
+                title: content == .document || content.isDocumentUnavailable ? selectedDocumentURL?.lastPathComponent : nil,
+                status: content == .document ? documentStatus : nil,
                 // With the sidebar hidden, the toggle sits beside the window buttons.
                 leadingInset: isSidebarCollapsed ? 64 : 0,
                 sidebarToggle: (isSidebarCollapsed ? "Show Library sidebar" : "Collapse Library sidebar", toggleSidebar),
-                open: open
+                // The state views for a missing Library carry their own actions, as in the guideline's mockups.
+                open: library == nil ? nil : open
             )
             .accessibilityElement(children: .contain)
             .accessibilityLabel(selectedDocumentURL.map { ["Reader top bar for \($0.lastPathComponent)", documentStatus?.text].compactMap { $0 }.joined(separator: ", ") } ?? "Reader top bar")
             .accessibilityIdentifier("paperbranch.reader.topbar")
 
-            if selectedDocumentURL == nil {
+            switch content {
+            case .choosingLibrary:
+                PBStateView(
+                    symbol: "folder",
+                    title: "Choose a Library",
+                    message: "Pick a folder of Markdown documents. Paperbranch shows its folders in the sidebar and opens it again next time.",
+                    secondary: .init(title: "Open a Document…", perform: open),
+                    primary: .init(title: "Choose Library…", perform: chooseLibrary)
+                )
+            case let .libraryUnavailable(name):
+                PBStateView(
+                    symbol: "folder.badge.questionmark",
+                    title: "Library unavailable",
+                    message: "Paperbranch can't reach \(name). The folder may have moved, or its drive may be disconnected.",
+                    secondary: .init(title: "Choose Another Library…", perform: chooseLibrary),
+                    primary: .init(title: "Reconnect", perform: reconnect)
+                )
+            case let .documentUnavailable(name):
+                // No buttons: the Library tree is the way back.
+                PBStateView(
+                    symbol: "doc.text",
+                    title: "Document unavailable",
+                    message: "\(name) may have been moved or deleted. Choose another document from the Library."
+                )
+            case .noSelection:
                 Text("Choose a document from the Library")
                     .font(.system(size: PBSize.textUI))
                     .foregroundStyle(PBColor.inkMuted)
@@ -311,7 +382,7 @@ private struct PaperbranchLibraryWindowView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Empty reader")
                     .accessibilityIdentifier("paperbranch.reader.empty")
-            } else {
+            case .document:
                 PBReadingProgress(progress: readingProgress)
                 HStack(spacing: 0) {
                     // The Document view spans the reader; its own CSS centers the 680 px column and ends the article with its footer.
