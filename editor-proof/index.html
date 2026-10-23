@@ -53,6 +53,13 @@
         border: 1px solid var(--danger); background: var(--code-bg); color: var(--danger); font: var(--text-ui) var(--font-ui);
       }
 
+      /* The reading progress line (Ticket 49): 2 px of --accent at the top of the Document view, under the top bar,
+         scaled per animation frame from src/harness.ts. */
+      #reading-progress {
+        position: fixed; top: 0; left: 0; right: 0; z-index: 20; height: 2px;
+        background: var(--accent); transform: scaleX(0); transform-origin: left; pointer-events: none;
+      }
+
       #document-footer {
         display: flex; justify-content: space-between; margin-top: var(--space-8); padding-top: var(--space-5);
         border-top: 1px solid var(--rule); color: var(--ink-muted); font: var(--text-caption) var(--font-ui);
@@ -79,6 +86,7 @@
     </style>
   </head>
   <body>
+    <div id="reading-progress" role="progressbar" aria-label="Reading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
     <article id="document">
       <div id="document-meta" hidden></div>
       <div id="editor-root"></div>

@@ -774,11 +774,12 @@ final class BridgeCoordinatorTests: XCTestCase {
         let standalone = try XCTUnwrap(delegate.standaloneWindows[documentURL])
         defer { standalone.window.close() }
 
-        // Ticket 45: the top bar holds the window buttons and the document name, with the progress line below it.
+        // Ticket 45: the top bar holds the window buttons and the document name. Ticket 49 moved the progress line
+        // into the Document view, so the chrome draws none of its own.
         XCTAssertTrue(standalone.window.styleMask.contains(.fullSizeContentView))
         let current = renderedElements(of: standalone.window)
         XCTAssertEqual(accessibilityElement("paperbranch.reader.topbar", in: current)?.value(forKey: "accessibilityLabel") as? String, "Reader top bar for Outside.md")
-        XCTAssertNotNil(accessibilityElement("paperbranch.reader.progress", in: current))
+        XCTAssertNil(accessibilityElement("paperbranch.reader.progress", in: current))
         XCTAssertNotNil(accessibilityElement("paperbranch.reader.document-canvas", in: current))
         // No Library parts.
         for libraryPart in ["paperbranch.reader.toggle-sidebar", "paperbranch.reader.open", "paperbranch.library.sidebar", "paperbranch.library.open-now"] {
@@ -955,7 +956,8 @@ final class BridgeCoordinatorTests: XCTestCase {
         let elements = renderedAccessibilityElements(in: try XCTUnwrap(window.contentView))
         XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-0", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Selected")
         XCTAssertEqual(accessibilityElement("paperbranch.library.outline.heading-1", in: elements)?.value(forKey: "accessibilityLabel") as? String, "Details")
-        XCTAssertEqual(try XCTUnwrap(accessibilityElement("paperbranch.reader.progress", in: elements)?.value(forKey: "accessibilityValue") as? Double), 0.42, accuracy: 0.001)
+        // Ticket 49: the Document view draws the progress line, so the chrome has none to re-render on scroll.
+        XCTAssertNil(accessibilityElement("paperbranch.reader.progress", in: elements))
         presentation.selectOutline(id: "heading-1")
         XCTAssertEqual(selectedOutlineID, "heading-1")
     }

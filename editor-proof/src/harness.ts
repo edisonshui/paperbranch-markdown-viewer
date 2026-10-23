@@ -151,14 +151,33 @@ function getMarkdownContent(): string {
   return editor.action(getMarkdown());
 }
 
-function getOutline(): Array<{ id: string; text: string; level: number }> {
+// The outline and its headings, refreshed on load and on content change and never on scroll (Ticket 49).
+let outlineHeadings: HTMLElement[] = [];
+let outline: Array<{ id: string; text: string; level: number }> = [];
+
+function readHeadings(): HTMLElement[] {
   const root = document.getElementById("editor-root");
   if (!root || blockedSource !== undefined) return [];
-  return Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")).map((heading, index) => {
+  return Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+}
+
+function outlineEntries(headings: HTMLElement[]): Array<{ id: string; text: string; level: number }> {
+  return headings.map((heading, index) => ({ id: `heading-${index}`, text: heading.textContent?.trim() ?? "", level: Number(heading.tagName.slice(1)) }));
+}
+
+// Content changed: rebuild the outline and tag each heading with its id, writing only attributes that differ.
+function refreshOutline(): void {
+  outlineHeadings = readHeadings();
+  outline = outlineEntries(outlineHeadings);
+  outlineHeadings.forEach((heading, index) => {
     const id = `heading-${index}`;
-    heading.setAttribute("data-paperbranch-outline-id", id);
-    return { id, text: heading.textContent?.trim() ?? "", level: Number(heading.tagName.slice(1)) };
+    if (heading.getAttribute("data-paperbranch-outline-id") !== id) heading.setAttribute("data-paperbranch-outline-id", id);
   });
+}
+
+// Reads the live headings without writing to them, for the editor contract.
+function getOutline(): Array<{ id: string; text: string; level: number }> {
+  return outlineEntries(readHeadings());
 }
 
 function selectOutline(id: string): boolean {
@@ -171,15 +190,23 @@ function selectOutline(id: string): boolean {
   return true;
 }
 
+// Index of the first element whose top is below `threshold`, found by binary search: headings and blocks sit in
+// document order, so their tops increase and each frame reads O(log n) positions.
+function firstIndexWithTopAbove(elements: Element[], threshold: number): number {
+  let low = 0;
+  let high = elements.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (elements[middle].getBoundingClientRect().top > threshold) high = middle; else low = middle + 1;
+  }
+  return low;
+}
+
 // The heading the reader is in: the last one at or above the top fifth of the Document view (Ticket 42).
 function getCurrentOutlineID(): string | null {
-  const root = document.getElementById("editor-root");
-  if (!root || blockedSource !== undefined) return null;
-  const headings = Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+  const headings = outlineHeadings.length > 0 && outlineHeadings[0].isConnected ? outlineHeadings : readHeadings();
   if (headings.length === 0) return null;
-  const line = window.innerHeight / 5;
-  let current = 0;
-  headings.forEach((heading, index) => { if (heading.getBoundingClientRect().top <= line) current = index; });
+  const current = Math.max(0, firstIndexWithTopAbove(headings, window.innerHeight / 5) - 1);
   return `heading-${current}`;
 }
 
@@ -189,8 +216,15 @@ function getReadingProgress(): number {
   return Math.max(0, Math.min(1, root.scrollTop / (root.scrollHeight - root.clientHeight)));
 }
 
+// The current heading native code last heard about, so scrolling reports only changes.
+let reportedOutlineID: string | null | undefined;
+
+// Content changed or a document loaded: send the whole navigation state.
 function reportNavigation(): void {
-  reportNavigationState({ outline: getOutline(), progress: getReadingProgress(), wordCount, currentOutlineID: getCurrentOutlineID() });
+  refreshOutline();
+  reportedOutlineID = getCurrentOutlineID();
+  reportNavigationState({ outline, progress: getReadingProgress(), wordCount, currentOutlineID: reportedOutlineID });
+  scheduleScrollFrame();
 }
 
 async function externalReplace(markdown: string): Promise<{ applied: boolean }> {
@@ -217,8 +251,6 @@ window.editorContract = {
   isDirty: () => dirty,
 };
 
-window.addEventListener("scroll", reportNavigation, { passive: true });
-
 // Collapsing or reopening the Library sidebar changes the Document view's width, which can reflow the text above the
 // reader. The block at the top of the view stays on the same line (Ticket 46).
 let readingAnchor: { block: Element; top: number } | null = null;
@@ -226,12 +258,47 @@ let readingAnchor: { block: Element; top: number } | null = null;
 function recordReadingAnchor(): void {
   // The first block whose top edge is in view: a block cut off at the top reflows too, so its top is no anchor.
   const blocks = Array.from(document.querySelectorAll("#editor-root .ProseMirror > *"));
-  const block = blocks.find((candidate) => candidate.getBoundingClientRect().top >= 0);
+  const block = blocks[firstIndexWithTopAbove(blocks, -0.5)];
   readingAnchor = block ? { block, top: block.getBoundingClientRect().top } : null;
 }
 
-window.addEventListener("scroll", recordReadingAnchor, { passive: true });
+// The reading progress line lives in the Document view (Ticket 49): moving it never re-renders the native chrome.
+let shownProgressPercent = -1;
+
+function drawReadingProgress(progress: number): void {
+  const line = document.getElementById("reading-progress");
+  if (!line) return;
+  line.style.transform = `scaleX(${progress})`;
+  const percent = Math.round(progress * 100);
+  if (percent !== shownProgressPercent) {
+    shownProgressPercent = percent;
+    line.setAttribute("aria-valuenow", String(percent));
+  }
+}
+
+// All scroll work runs in one animation frame callback (Ticket 49): it reads layout first, then writes only the
+// progress line, and tells native code only when the current heading changes.
+let scrollFrame = 0;
+
+function scheduleScrollFrame(): void {
+  if (scrollFrame === 0) scrollFrame = requestAnimationFrame(runScrollFrame);
+}
+
+function runScrollFrame(): void {
+  scrollFrame = 0;
+  const progress = getReadingProgress();
+  const currentOutlineID = getCurrentOutlineID();
+  recordReadingAnchor();
+  drawReadingProgress(progress);
+  if (currentOutlineID !== reportedOutlineID) {
+    reportedOutlineID = currentOutlineID;
+    reportNavigationState({ outline, progress, wordCount, currentOutlineID });
+  }
+}
+
+window.addEventListener("scroll", scheduleScrollFrame, { passive: true });
 window.addEventListener("resize", () => {
+  scheduleScrollFrame();
   if (!readingAnchor?.block.isConnected || window.scrollY === 0) return;
   const drift = readingAnchor.block.getBoundingClientRect().top - readingAnchor.top;
   if (Math.abs(drift) >= 1) window.scrollBy(0, drift);

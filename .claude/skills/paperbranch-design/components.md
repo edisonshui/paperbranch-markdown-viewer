@@ -351,22 +351,20 @@ struct PBTopBar: View {
 
 ## Reading progress line
 
-A 2 px `--accent` line under the top bar that grows with the scroll. It follows the scroll directly, with no animation.
+A 2 px `--accent` line under the top bar that grows with the scroll. It lives in the Document view, not the native chrome, so moving it never re-renders the sidebar or top bar. The editor updates it once per animation frame from the same callback that reads the scroll position, with no animation of its own (Ticket 49, 22 Oct 2026).
 
-```swift
-struct PBReadingProgress: View {
-    let progress: Double
+```html
+<div id="reading-progress" role="progressbar" aria-label="Reading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+```
 
-    var body: some View {
-        Rectangle()
-            .fill(PBColor.accent)
-            .frame(height: 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .scaleEffect(x: max(0, min(1, progress)), y: 1, anchor: .leading)
-            .accessibilityRepresentation { ProgressView("Reading progress", value: progress) }
-    }
+```css
+#reading-progress {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20; height: 2px;
+  background: var(--accent); transform: scaleX(0); transform-origin: left; pointer-events: none;
 }
 ```
+
+Per frame, after every layout read: set `transform: scaleX(progress)`, and update `aria-valuenow` only when the whole percent changes.
 
 ## Outline panel
 

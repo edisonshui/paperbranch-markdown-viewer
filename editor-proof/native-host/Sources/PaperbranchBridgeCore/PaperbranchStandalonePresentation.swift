@@ -87,7 +87,7 @@ private struct PaperbranchStandaloneWindowView: View {
                     .accessibilityLabel(name.map { ["Reader top bar for \($0)", status?.text].compactMap { $0 }.joined(separator: ", ") } ?? "Reader top bar")
                     .accessibilityIdentifier("paperbranch.reader.topbar")
                 if isAvailable {
-                    PBReadingProgress(progress: readingProgress)
+                    // The reading progress line is drawn by the Document view itself (Ticket 49).
                     HStack(spacing: 0) {
                         PaperbranchWebView(webView: webView)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

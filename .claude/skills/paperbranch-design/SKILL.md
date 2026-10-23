@@ -91,7 +91,7 @@ Headings are bold SF Pro with -0.02em tracking and line height 1.2.
 
 - **Texture:** none. The page is plain `--paper`. The sidebar is one step darker so the page reads as a sheet beside it.
 - **Light:** only the formatting popover has a shadow (`--shadow-popover`). Alerts are native sheets, and macOS draws their shadow. Everything else is flat.
-- **Motion:** hover and selection fills fade in `--duration-fast` (120 ms). The sidebar slides and folder chevrons turn in `--duration-medium` (200 ms). Switching documents is instant. The progress line follows the scroll directly. Reduce Motion sets every duration to zero.
+- **Motion:** hover and selection fills fade in `--duration-fast` (120 ms). The sidebar slides and folder chevrons turn in `--duration-medium` (200 ms). Switching documents is instant. The progress line lives in the Document view and follows the scroll directly, updated once per animation frame. Reduce Motion sets every duration to zero.
 
 ## Icons
 

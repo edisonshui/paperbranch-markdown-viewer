@@ -246,21 +246,6 @@ struct PBTopBar: View {
     }
 }
 
-/// A 2 px --accent line under the top bar that follows the scroll directly.
-struct PBReadingProgress: View {
-    let progress: Double
-
-    var body: some View {
-        Rectangle()
-            .fill(PBColor.accent)
-            .frame(height: 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .scaleEffect(x: max(0, min(1, progress)), y: 1, anchor: .leading)
-            .accessibilityRepresentation { ProgressView("Reading progress", value: progress) }
-            .accessibilityIdentifier("paperbranch.reader.progress")
-    }
-}
-
 /// The transparent title bar covers only the top of the top bar, so the rest of the bar moves the window too.
 struct PBWindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> PBWindowDragView { PBWindowDragView() }

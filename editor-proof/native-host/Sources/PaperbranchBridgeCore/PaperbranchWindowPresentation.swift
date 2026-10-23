@@ -411,7 +411,7 @@ private struct PaperbranchLibraryWindowView: View {
                     .accessibilityLabel("Empty reader")
                     .accessibilityIdentifier("paperbranch.reader.empty")
             case .document:
-                PBReadingProgress(progress: readingProgress)
+                // The reading progress line is drawn by the Document view itself (Ticket 49).
                 HStack(spacing: 0) {
                     // The Document view spans the reader; its own CSS centers the 680 px column and ends the article with its footer.
                     PaperbranchWebView(webView: webView)
