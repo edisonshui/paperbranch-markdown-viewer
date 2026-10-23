@@ -1422,6 +1422,29 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testSelectingTheOpenDocumentAfterSwitchingLibrariesSelectsItAgain() async throws {
+        // Ticket 51: choosing another Library clears the selection but leaves the document open in the Library window.
+        // Switching back and clicking that document only focused the window, so it stayed unselected and unshown.
+        let sampleURL = try makeTemporaryDirectory(named: "paperbranch-switch-sample")
+        let emptyURL = try makeTemporaryDirectory(named: "paperbranch-switch-empty")
+        defer { try? FileManager.default.removeItem(at: sampleURL); try? FileManager.default.removeItem(at: emptyURL) }
+        let documentURL = sampleURL.appendingPathComponent("project-ideas.md")
+        try "# Project ideas\n".write(to: documentURL, atomically: true, encoding: .utf8)
+
+        let library = LibraryWorkflow(bookmarks: LibraryAccess(store: TestLibraryBookmarkStore(), codec: TestLibraryBookmarkCodec()))
+        let application = FinderOpenWorkflow(libraryWorkflow: library)
+        try library.chooseLibrary(at: sampleURL)
+        try await application.applicationDidReceiveFinderOpen([documentURL])
+        try library.chooseLibrary(at: emptyURL)
+        try library.chooseLibrary(at: sampleURL)
+        XCTAssertNil(library.selectedDocumentURL)
+
+        try await application.applicationDidReceiveFinderOpen([documentURL])
+
+        XCTAssertEqual(library.selectedDocumentURL, documentURL.standardizedFileURL)
+    }
+
+    @MainActor
     func testRunningApplicationOpensAndSavesSeparateFinderStandaloneDocuments() async throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-finder-standalone-library")
         let outsideURL = try makeTemporaryDirectory(named: "paperbranch-finder-outside")

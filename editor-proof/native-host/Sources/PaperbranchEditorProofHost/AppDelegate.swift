@@ -258,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
                     if state.kind == .library { try await openLibraryDocument(at: state.documentURL) }
                     else { try await openStandaloneDocument(at: state.documentURL) }
                 case let .focused(state):
-                    if state.kind == .library { window.makeKeyAndOrderFront(nil) }
+                    if state.kind == .library { showFocusedLibraryDocument(at: state.documentURL) }
                     else { standaloneWindows[state.documentURL]?.window.makeKeyAndOrderFront(nil) }
                 }
             }
@@ -269,6 +269,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
         try await documentSession.open(url)
         sidebarController.select(url: url)
         updateWindowTitle()
+        refreshWindowPresentation()
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    /// The document is already open in the Library window, and focusing it may have selected it again (Ticket 51).
+    private func showFocusedLibraryDocument(at url: URL) {
+        sidebarController.select(url: url)
         refreshWindowPresentation()
         window.makeKeyAndOrderFront(nil)
     }
