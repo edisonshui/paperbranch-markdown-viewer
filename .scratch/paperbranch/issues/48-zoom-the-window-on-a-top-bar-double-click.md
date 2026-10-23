@@ -23,3 +23,5 @@ Verified 22 Oct 2026:
 - Green: `swift test --filter TitleBarDoubleClickTests` passed 2 of 2.
 - `cd editor-proof/native-host && ./verify-package.sh`: 80 native tests passed. `cd editor-proof && npx playwright test`: 81 of 81 passed.
 - Not yet checked by hand in the running app.
+
+Confirmed by Edison 2026-10-23 in the running app: double-clicking the empty top bar zooms the window to fill the screen, and a second double-click returns it to its earlier size.

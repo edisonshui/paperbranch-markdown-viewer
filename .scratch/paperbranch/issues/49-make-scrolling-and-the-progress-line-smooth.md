@@ -40,3 +40,5 @@ Verified 2026-10-22:
 - Not measured: frame times in WebKit inside the app. Edison is using the Mac, so whether scrolling now feels smooth on a long report needs his check by eye.
 
 Implementation commit: `a7e71ac`.
+
+Confirmed by Edison 2026-10-23 in the running app, light and dark: medium documents scroll smoothly and the progress line keeps up. `project-ideas.md` still lagged, which Ticket 50 fixed.

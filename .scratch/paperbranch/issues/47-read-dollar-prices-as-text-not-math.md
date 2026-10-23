@@ -24,3 +24,5 @@ Verified 22 Oct 2026:
 - Red: `npx playwright test tests/constructs/admission.spec.ts` failed the three currency tests.
 - Green: 16 of 16 admission tests passed. Edison's `ranking.md`, both reports, and `project-ideas.md` classify as admitted, and `fixtures/unsupported-math.md` stays blocked.
 - `cd editor-proof && npx playwright test`: 81 of 81 passed. `cd editor-proof/native-host && ./verify-package.sh`: 80 native tests passed.
+
+Confirmed by Edison 2026-10-23 in the running app: `ranking.md` and both UIUC apartment reports open as documents instead of the blocked message.

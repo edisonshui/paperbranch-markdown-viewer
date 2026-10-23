@@ -25,3 +25,5 @@ Verified 2026-10-23:
 - Red: `testLibrarySidebarOutlineIsNotRebuiltWhenOnlyTheCurrentHeadingChanges` failed with "A current-heading change rebuilt the outline buttons".
 - Green: that test passed. `./verify-package.sh`: 81 packaged native tests passed. `npx playwright test`: 84 of 84 passed.
 - Not measured: frame times in the running app. Whether `project-ideas.md` now scrolls smoothly needs Edison's check by eye.
+
+Confirmed by Edison 2026-10-23 in the running app after the fix: scrolling `project-ideas.md` is smooth.

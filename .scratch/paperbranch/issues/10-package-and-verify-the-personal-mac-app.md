@@ -47,3 +47,5 @@ Visual pass 2026-10-22 against the brand guideline (screenshots in `.scratch/pap
 
 - The manual acceptance item is now complete. In the packaged app the visual pass chose Keep My Edits on a real conflict, saved, got the overwrite warning, and confirmed Overwrite, in both appearances. With the earlier functional pass, every listed flow has been exercised by hand.
 - Still open, needs Edison's visual check: the collapsed sidebar (Ticket 46's slide), Standalone windows (Ticket 45), an empty Library, and a window under the 1240 px outline breakpoint. Edison came back to the Mac before these were captured, so the two visual criteria stay unchecked.
+
+Edison's visual check 2026-10-23 in the running app, light and dark: the collapsed sidebar slides away in one smooth move with the text staying put (Ticket 46), Command-O opens an outside document in a Standalone window with no Library parts (Ticket 45), and below 1240 px the outline moves from the right panel to under the Library tree. Still open: an empty Library.
