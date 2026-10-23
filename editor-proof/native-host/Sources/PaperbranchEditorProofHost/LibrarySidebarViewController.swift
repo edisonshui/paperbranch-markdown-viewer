@@ -12,6 +12,8 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     private var library: LibraryBrowser?
     private let navigationStack = NSStackView()
     private let progressLabel = NSTextField(labelWithString: "Reading progress: 0%")
+    /// The id, text, and level of each outline button on screen, or nil before the first outline.
+    private var shownHeadings: [[String]]?
     /// Programmatic selection mirrors workflow state and must not route back as a user selection.
     private var isApplyingSelection = false
 
@@ -91,6 +93,12 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
     }
 
     func showDocumentNavigation(outline: [DocumentOutlineEntry], progress: Double) {
+        progressLabel.stringValue = "Reading progress: \(Int((max(0, min(1, progress)) * 100).rounded()))%"
+        // Scrolling past a heading changes only which entry is current, which this sidebar does not show. Rebuilding
+        // every button for it cost 33 ms with 35 headings, a visible scroll hitch (Ticket 50).
+        let headings = outline.map { [$0.id, $0.text, String($0.level)] }
+        guard headings != shownHeadings else { return }
+        shownHeadings = headings
         navigationStack.arrangedSubviews.dropFirst(2).forEach { navigationStack.removeArrangedSubview($0); $0.removeFromSuperview() }
         if outline.isEmpty {
             navigationStack.addArrangedSubview(NSTextField(labelWithString: "No headings in this document."))
@@ -103,7 +111,6 @@ final class LibrarySidebarViewController: NSViewController, NSOutlineViewDataSou
                 navigationStack.addArrangedSubview(button)
             }
         }
-        progressLabel.stringValue = "Reading progress: \(Int((max(0, min(1, progress)) * 100).rounded()))%"
     }
 
     @objc private func outlinePressed(_ sender: NSButton) { if let id = sender.identifier?.rawValue { selectOutline?(id) } }

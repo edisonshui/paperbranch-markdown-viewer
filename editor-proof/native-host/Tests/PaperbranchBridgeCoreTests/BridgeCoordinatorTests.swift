@@ -908,6 +908,30 @@ final class BridgeCoordinatorTests: XCTestCase {
         XCTAssertLessThan(firstHeading.convert(firstHeading.bounds, to: nil).minX - sidebarFrame.minX, 40, "Outline entries are not left-aligned")
     }
 
+    @MainActor
+    func testLibrarySidebarOutlineIsNotRebuiltWhenOnlyTheCurrentHeadingChanges() throws {
+        // Ticket 50: scrolling past a heading reports a new current heading, and rebuilding every outline button for it
+        // cost 33 ms with 35 headings. The AppKit sidebar does not mark the current heading, so it keeps its buttons.
+        let sidebar = LibrarySidebarViewController()
+        _ = sidebar.view
+        func outline(current: Int) -> [DocumentOutlineEntry] {
+            (0..<35).map { DocumentOutlineEntry(id: "heading-\($0)", text: "Section \($0)", level: 2, isCurrent: $0 == current) }
+        }
+        func buttons() -> [NSButton] { descendants(of: sidebar.view).compactMap { $0 as? NSButton }.filter { $0.identifier?.rawValue.hasPrefix("heading-") == true } }
+        sidebar.showDocumentNavigation(outline: outline(current: 0), progress: 0)
+        let first = buttons()
+        XCTAssertEqual(first.count, 35)
+
+        sidebar.showDocumentNavigation(outline: outline(current: 1), progress: 0.4)
+        XCTAssertTrue(zip(first, buttons()).allSatisfy { $0 === $1 }, "A current-heading change rebuilt the outline buttons")
+        XCTAssertTrue(descendants(of: sidebar.view).contains { ($0 as? NSTextField)?.stringValue == "Reading progress: 40%" })
+
+        var renamed = outline(current: 1)
+        renamed[3] = DocumentOutlineEntry(id: "heading-3", text: "Renamed", level: 2)
+        sidebar.showDocumentNavigation(outline: renamed, progress: 0.4)
+        XCTAssertEqual(buttons().first { $0.identifier?.rawValue == "heading-3" }?.title, "  Renamed")
+    }
+
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews + view.subviews.flatMap { descendants(of: $0) }
     }
