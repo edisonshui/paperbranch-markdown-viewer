@@ -33,7 +33,7 @@ Verified 2026-10-22:
 
 - Red: `testLibraryWorkflowReportsWhetherALibraryWasChosenAndWhichIsUnavailable` and `testLibraryWindowShowsTheDesignedStateViews` failed to compile. The top-bar check then failed on the background bleed (state view bottom 898 against top bar 847, in flipped screen coordinates).
 - Green: both passed, with the state titles, messages, sidebar caption, buttons, and actions checked. The guard tests now list these states as Variant B.
-- `./verify-package.sh`: 76 packaged native tests passed. `npx playwright test`: 75 of 75 passed.
+- `./verify-package.sh`: 76 packaged native tests passed. `npx playwright test`: the first run had one failure in `document-navigation.spec.ts:42`, a keyboard-driven test that also failed once in Ticket 39 before this work. It passed 12 of 12 alone, and the next two full runs passed 75 of 75. This ticket changed no web code.
 - Packaged app, Library folder moved away: Library unavailable matched guideline page 13 (screenshot deleted).
 
 Implementation commit: `950b5fa`.
