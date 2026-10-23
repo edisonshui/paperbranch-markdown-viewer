@@ -41,8 +41,6 @@ public enum PBColor {
     public static let inkIcon = Color(light: "#808087", dark: "#7C7C84")
     public static let inkOnStrong = Color(light: "#FFFFFF", dark: "#161618")
     public static let accent = Color(light: "#2563EB", dark: "#5B8DEF")
-    public static let markBg = Color(light: "#2563EB", dark: "#5B8DEF")
-    public static let markInk = Color(light: "#FFFFFF", dark: "#0F1115")
     public static let danger = Color(light: "#C4291C", dark: "#FF7B6E")
     public static let dangerInk = Color(light: "#FFFFFF", dark: "#161618")
 
@@ -51,7 +49,7 @@ public enum PBColor {
         ("--paper", paper), ("--sidebar", sidebar), ("--surface", surface), ("--row-hover", rowHover),
         ("--row-selected", rowSelected), ("--rule", rule), ("--border", border), ("--ink", ink),
         ("--ink-strong", inkStrong), ("--ink-muted", inkMuted), ("--ink-icon", inkIcon), ("--ink-on-strong", inkOnStrong),
-        ("--accent", accent), ("--mark-bg", markBg), ("--mark-ink", markInk), ("--danger", danger), ("--danger-ink", dangerInk),
+        ("--accent", accent), ("--danger", danger), ("--danger-ink", dangerInk),
     ]
 }
 

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824" width="1024" height="1024">
+<!-- Paperbranch logo (option G2, picked by Edison on 23 Oct 2026): a white page whose corner grows into a leaf, with the New York Bold P.
+     icon.json holds the navy gradient tile. Colors match the logo tokens in tokens.css. Built by .scratch/paperbranch-brand/logo/round3.py. -->
+<g transform="translate(512 512) scale(0.88) translate(-538 -480)">
+<path d="M336 250 H548 L700 402 V780 Q700 810 670 810 H336 Q306 810 306 780 V280 Q306 250 336 250 Z" fill="#FFFFFF"/>
+<path d="M548 250 Q560 150 770 150 Q790 360 700 402 Z" fill="#5B8DEF"/>
+<path d="M548 250 L700 402" stroke="#5B8DEF" stroke-width="14" stroke-linecap="round"/>
+<path d="M624 326 Q680 240 760 160" stroke="#FFFFFF" stroke-width="12" fill="none" stroke-linecap="round"/>
+<path d="M372.6 -305.7Q372.6 -273.2 357.1 -249.6Q341.6 -225.9 314.7 -210.6Q287.9 -195.3 253.4 -187.9Q219.0 -180.4 181.1 -180.4L147.5 -180.4L147.5 -46.4Q147.5 -31.7 150.4 -22.4Q153.2 -13.2 160.9 -8.1Q168.6 -2.9 182.8 -0.3L182.8 -0.0L13.7 -0.0L13.7 -0.3Q26.3 -3.8 33.4 -8.2Q40.4 -12.6 43.3 -20.5Q46.1 -28.4 46.1 -41.7L46.1 -381.3Q46.1 -394.8 43.3 -402.6Q40.4 -410.4 33.4 -415.0Q26.3 -419.6 13.7 -422.8L13.7 -423.0L181.1 -423.0Q273.7 -423.0 323.1 -392.8Q372.6 -362.5 372.6 -305.7ZM265.4 -301.8Q265.4 -334.4 255.3 -361.0Q245.2 -387.6 223.6 -403.9Q202.0 -420.1 167.8 -421.9L147.5 -422.8L147.5 -180.7L167.8 -181.6Q200.3 -183.0 222.0 -199.1Q243.6 -215.2 254.5 -241.9Q265.4 -268.6 265.4 -301.8Z" fill="#111113" transform="translate(339 725) scale(0.78)"/>
+</g></svg>

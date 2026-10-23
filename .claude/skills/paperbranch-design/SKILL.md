@@ -50,8 +50,6 @@ Each color has one job. Text pairs reach 4.5:1 and shape pairs reach 3:1 in both
 | `--ink-on-strong` | #FFFFFF | #161618 | Text on a --ink-strong fill (primary button) |
 | `--accent` | #2563EB | #5B8DEF | Shape only: reading progress line, selected-row bar, current outline mark, focus ring. 4.2:1 or better on every surface |
 | `--accent-text` | #1D4ED8 | #7EA7F5 | Links and inline code text. 6.7:1 light, 7.1:1 dark on paper |
-| `--mark-bg` | #2563EB | #5B8DEF | Wordmark "P" tile |
-| `--mark-ink` | #FFFFFF | #0F1115 | The "P" on the tile. 5.2:1 light, 5.9:1 dark |
 | `--danger` | #C4291C | #FF7B6E | Warnings only: "Changed on disk", destructive buttons, missing-image outline. 5.7:1 on surface light, 6.0:1 dark |
 | `--danger-ink` | #FFFFFF | #161618 | Text on a --danger fill |
 
@@ -97,6 +95,24 @@ Headings are bold SF Pro with -0.02em tracking and line height 1.2.
 
 Native chrome uses SF Symbols, which follow the system's weight and size: `sidebar.left` (sidebar toggle), `chevron.right` (folder, turned 90 degrees when expanded), `folder` (choosing a Library), `folder.badge.questionmark` (Library unavailable), `doc.text` (Document unavailable). The Document view draws the SVG files in [icons/](icons/): `link.svg` and `code.svg` in the formatting popover. They are 24 px grids stroked at 1.7 with `currentColor`.
 
+## Logo
+
+The logo is a white page whose top corner grows into a leaf, with a New York Bold "P" on it, on a navy tile. It says paper, branch, and Paperbranch, and the P is set in the app's reading font. Edison picked it (option G2) on 23 Oct 2026, after passing on a drawn blue P.
+
+| Token | Value | Part |
+|---|---|---|
+| `--logo-tile-top` / `--logo-tile-bottom` | #24324D / #111827 | The tile, a top-to-bottom gradient |
+| `--logo-page` | #FFFFFF | The page |
+| `--logo-leaf` | #5B8DEF | The leaf and the fold line. Shape only |
+| `--logo-ink` | #111113 | The P |
+
+The logo colors are fixed: the icon looks the same in light and dark.
+
+- **App icon:** `editor-proof/native-host/Resources/AppIcon.icon` (Icon Composer format, so macOS 26 draws it natively). `icon.json` holds the gradient, and `Assets/glyph.svg` holds the page, leaf, and P. `.scratch/paperbranch-brand/logo/round3.py` generates both.
+- **Sidebar wordmark:** draws the app icon itself (`NSApplication.shared.applicationIconImage`), so the two cannot drift apart. Never redraw the logo in SwiftUI.
+- Draw the logo with filled shapes. macOS clips strokes to their path bounds, so a stroke may stay only where it sits inside a filled shape.
+- In dark mode the navy tile nearly matches the sidebar (1.02:1). The white page carries the shape, so this was accepted (judgment call, 23 Oct 2026).
+
 ## Voice
 
 - Buttons and menu items use title case, as macOS does: "Open a Document…", "Choose Another Library…". Titles, labels, and messages use sentence case. This was a judgment call on 22 Oct 2026: the guideline mockups mixed the two, and principle 3 picks the Mac convention.
@@ -118,7 +134,9 @@ Native chrome uses SF Symbols, which follow the system's weight and size: `sideb
 
 ## Open decisions
 
-None as of 22 Oct 2026. For anything this skill does not settle, ask Edison or pick, and say so in your report.
+None as of 23 Oct 2026.
+
+For anything this skill does not settle, ask Edison or pick, and say so in your report.
 
 To change a color, font, size, rule, or component, use the brand-guideline skill's change flow.
 
@@ -140,7 +158,7 @@ The switch-over (Tickets 39 to 46, 22 Oct 2026) moved the whole app onto this sk
 - [ ] Every color, size, space, radius, shadow, and duration comes from a token.
 - [ ] The screen works in light and dark, and every text pair reaches 4.5:1.
 - [ ] Body text is New York at 19 px with line height 1.7, in a column no wider than 680 px.
-- [ ] Blue appears only on the progress line, the selected row's bar, the current outline heading, links, the popover's active button, and focus.
+- [ ] Blue appears only on the progress line, the selected row's bar, the current outline heading, links, the popover's active button, focus, and the logo's leaf.
 - [ ] Red appears only on warnings and destructive actions.
 - [ ] Only the formatting popover draws its own shadow.
 - [ ] The window has at most one primary button.
