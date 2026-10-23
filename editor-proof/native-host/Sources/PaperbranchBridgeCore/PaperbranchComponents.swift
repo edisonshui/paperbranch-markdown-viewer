@@ -270,3 +270,56 @@ struct PBWindowDragArea: NSViewRepresentable {
 final class PBWindowDragView: NSView {
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
+
+/// "On this page": outline items at 12 px --ink-muted, indented 12 px per level. The current heading is
+/// --ink-strong medium with a 2 px --accent bar. The same rows render as a right panel and under the Library tree.
+struct PBOutlineRows: View {
+    let entries: [DocumentOutlineEntry]
+    let select: (String) -> Void
+
+    var body: some View {
+        PBSectionLabel(text: "On this page")
+        ForEach(entries, id: \.id) { entry in
+            Button { select(entry.id) } label: {
+                Text(entry.text)
+                    .font(.system(size: PBSize.textCaption, weight: entry.isCurrent ? .medium : .regular))
+                    .foregroundStyle(entry.isCurrent ? PBColor.inkStrong : PBColor.inkMuted)
+                    .lineLimit(1)
+                    .padding(.leading, PBSize.space3 + CGFloat(max(0, entry.level - 1)) * PBSize.space3)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .leading) {
+                        if entry.isCurrent {
+                            RoundedRectangle(cornerRadius: 1).fill(PBColor.accent).frame(width: 2).padding(.vertical, 6)
+                        }
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(entry.text)
+            .accessibilityValue(entry.isCurrent ? "Current heading" : "")
+            .accessibilityAddTraits(entry.isCurrent ? .isSelected : [])
+            .accessibilityIdentifier("paperbranch.library.outline.\(entry.id)")
+        }
+    }
+}
+
+/// The outline as a 220 px panel on the right of the Document view, for windows 1240 px and wider.
+struct PBOutlinePanel: View {
+    let entries: [DocumentOutlineEntry]
+    let select: (String) -> Void
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                PBOutlineRows(entries: entries, select: select)
+            }
+            .padding(.top, PBSize.space7)
+            .padding(.trailing, PBSize.space4)
+        }
+        .frame(width: PBSize.outlineWidth)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("On this page")
+        .accessibilityIdentifier("paperbranch.reader.outline-panel")
+    }
+}

@@ -14,6 +14,15 @@ public struct DocumentOutlineEntry: Equatable {
     public let id: String
     public let text: String
     public let level: Int
+    /// The heading the reader is in (Ticket 42).
+    public let isCurrent: Bool
+
+    public init(id: String, text: String, level: Int, isCurrent: Bool = false) {
+        self.id = id
+        self.text = text
+        self.level = level
+        self.isCurrent = isCurrent
+    }
 }
 
 @MainActor
@@ -173,9 +182,10 @@ extension BridgeCoordinator: WKScriptMessageHandler {
             isDirty = dirty
             delegate?.bridgeCoordinator(self, dirtyStateChanged: dirty)
         case "navigationStateChanged":
+            let currentOutlineID = body["currentOutlineID"] as? String
             let outline = (body["outline"] as? [[String: Any]] ?? []).compactMap { entry -> DocumentOutlineEntry? in
                 guard let id = entry["id"] as? String, let text = entry["text"] as? String, let level = entry["level"] as? Int else { return nil }
-                return DocumentOutlineEntry(id: id, text: text, level: level)
+                return DocumentOutlineEntry(id: id, text: text, level: level, isCurrent: id == currentOutlineID)
             }
             let progress = (body["progress"] as? NSNumber)?.doubleValue ?? 0
             let wordCount = (body["wordCount"] as? NSNumber)?.intValue

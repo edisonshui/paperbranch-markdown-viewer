@@ -33,7 +33,7 @@ export interface NativeBridgeHost {
 }
 
 // `wordCount` is null for a blocked document, which shows no meta line.
-interface NavigationState { outline: Array<{ id: string; text: string; level: number }>; progress: number; wordCount: number | null; }
+interface NavigationState { outline: Array<{ id: string; text: string; level: number }>; progress: number; wordCount: number | null; currentOutlineID: string | null; }
 type OutgoingMessage = { type: "dirtyStateChanged"; dirty: boolean } | ({ type: "navigationStateChanged" } & NavigationState);
 
 function postToNative(message: OutgoingMessage): void {

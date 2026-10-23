@@ -238,18 +238,22 @@ private struct PaperbranchLibraryWindowView: View {
     let open: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            if !isSidebarCollapsed {
-                sidebar
+        GeometryReader { proxy in
+            // The outline is a right panel in windows 1240 px and wider, and sits under the Library tree below that.
+            let showsOutlinePanel = proxy.size.width >= PBSize.outlineMinWindow
+            HStack(spacing: 0) {
+                if !isSidebarCollapsed {
+                    sidebar(showsOutline: !showsOutlinePanel)
+                }
+                reader(showsOutlinePanel: showsOutlinePanel)
             }
-            reader
         }
         .background(PBColor.paper)
         // The window's content runs under its transparent title bar, so the top bar starts at the window's top edge.
         .ignoresSafeArea()
     }
 
-    private var sidebar: some View {
+    private func sidebar(showsOutline: Bool) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 PBWordmark()
@@ -268,23 +272,9 @@ private struct PaperbranchLibraryWindowView: View {
                 ForEach(library.root.children) { node in
                     PaperbranchLibraryNodeRows(node: node, sidebarState: sidebarState, selectedDocumentURL: selectedDocumentURL, depth: 0, selectDocument: selectDocument, setFolder: setFolder)
                 }
-                if !outline.isEmpty {
-                    PBSectionLabel(text: "On this page")
+                if showsOutline && !outline.isEmpty {
+                    PBOutlineRows(entries: outline, select: selectOutline)
                         .padding(.top, PBSize.space3)
-                    ForEach(outline, id: \.id) { entry in
-                        Button(action: { selectOutline(entry.id) }) {
-                            Text(entry.text)
-                                .font(.system(size: PBSize.textCaption))
-                                .foregroundStyle(PBColor.inkMuted)
-                                .lineLimit(1)
-                                .padding(.leading, PBSize.space3 + CGFloat(max(0, entry.level - 1)) * PBSize.space3)
-                                .padding(.vertical, 5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("paperbranch.library.outline.\(entry.id)")
-                    }
                 }
             }
             .padding(.horizontal, PBSize.space2)
@@ -299,7 +289,7 @@ private struct PaperbranchLibraryWindowView: View {
         .accessibilityIdentifier("paperbranch.library.sidebar")
     }
 
-    private var reader: some View {
+    private func reader(showsOutlinePanel: Bool) -> some View {
         VStack(spacing: 0) {
             PBTopBar(
                 title: selectedDocumentURL?.lastPathComponent,
@@ -323,13 +313,18 @@ private struct PaperbranchLibraryWindowView: View {
                     .accessibilityIdentifier("paperbranch.reader.empty")
             } else {
                 PBReadingProgress(progress: readingProgress)
-                // The Document view spans the reader; its own CSS centers the 680 px column and ends the article with its footer.
-                PaperbranchWebView(webView: webView)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityIdentifier("paperbranch.document.view")
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Document canvas")
-                    .accessibilityIdentifier("paperbranch.reader.document-canvas")
+                HStack(spacing: 0) {
+                    // The Document view spans the reader; its own CSS centers the 680 px column and ends the article with its footer.
+                    PaperbranchWebView(webView: webView)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier("paperbranch.document.view")
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Document canvas")
+                        .accessibilityIdentifier("paperbranch.reader.document-canvas")
+                    if showsOutlinePanel && !outline.isEmpty {
+                        PBOutlinePanel(entries: outline, select: selectOutline)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

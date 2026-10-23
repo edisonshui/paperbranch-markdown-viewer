@@ -171,13 +171,27 @@ function selectOutline(id: string): boolean {
   return true;
 }
 
+// The heading the reader is in: the last one at or above the top fifth of the Document view (Ticket 42).
+function getCurrentOutlineID(): string | null {
+  const root = document.getElementById("editor-root");
+  if (!root || blockedSource !== undefined) return null;
+  const headings = Array.from(root.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"));
+  if (headings.length === 0) return null;
+  const line = window.innerHeight / 5;
+  let current = 0;
+  headings.forEach((heading, index) => { if (heading.getBoundingClientRect().top <= line) current = index; });
+  return `heading-${current}`;
+}
+
 function getReadingProgress(): number {
   const root = document.scrollingElement;
   if (!root || root.scrollHeight <= root.clientHeight) return 0;
   return Math.max(0, Math.min(1, root.scrollTop / (root.scrollHeight - root.clientHeight)));
 }
 
-function reportNavigation(): void { reportNavigationState({ outline: getOutline(), progress: getReadingProgress(), wordCount }); }
+function reportNavigation(): void {
+  reportNavigationState({ outline: getOutline(), progress: getReadingProgress(), wordCount, currentOutlineID: getCurrentOutlineID() });
+}
 
 async function externalReplace(markdown: string): Promise<{ applied: boolean }> {
   if (dirty) return { applied: false };
@@ -199,6 +213,7 @@ window.editorContract = {
   getOutline,
   selectOutline,
   getReadingProgress,
+  getCurrentOutlineID,
   isDirty: () => dirty,
 };
 

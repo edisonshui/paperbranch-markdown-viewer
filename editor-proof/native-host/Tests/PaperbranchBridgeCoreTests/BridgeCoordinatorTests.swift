@@ -880,6 +880,49 @@ final class BridgeCoordinatorTests: XCTestCase {
     }
 
     @MainActor
+    func testOutlineMovesToARightPanelInWideWindowsAndMarksTheCurrentHeading() throws {
+        let libraryURL = try makeTemporaryDirectory(named: "paperbranch-outline-panel")
+        defer { try? FileManager.default.removeItem(at: libraryURL) }
+        let documentURL = libraryURL.appendingPathComponent("Selected.md")
+        try "# Selected\n\n## Details\n".write(to: documentURL, atomically: true, encoding: .utf8)
+        let library = try LibraryBrowser.choose(libraryURL)
+
+        // Ticket 42: a right panel at 1240 px and wider, under the Library tree below that.
+        for (width, wide) in [(CGFloat(1300), true), (1100, false)] {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 800), styleMask: [.titled], backing: .buffered, defer: false)
+            let presentation = PaperbranchWindowPresentation(window: window, webView: WKWebView())
+            XCTAssertTrue(presentation.render(.init(
+                library: library,
+                sidebarState: LibrarySidebarState(),
+                selectedDocumentURL: documentURL,
+                document: .init(url: documentURL, kind: .library, availability: .available, isDirty: false, conflict: nil),
+                outline: [.init(id: "heading-0", text: "Selected", level: 1), .init(id: "heading-1", text: "Details", level: 2, isCurrent: true)]
+            )))
+            let root = try XCTUnwrap(window.contentView)
+            root.layoutSubtreeIfNeeded()
+            let elements = renderedAccessibilityElements(in: root)
+            let sidebar = try XCTUnwrap(accessibilityElement("paperbranch.library.sidebar", in: elements))
+            let inSidebar = accessibilityElement("paperbranch.library.outline.heading-1", in: accessibilityDescendants(of: sidebar))
+            let panel = accessibilityElement("paperbranch.reader.outline-panel", in: elements)
+            if wide {
+                let panel = try XCTUnwrap(panel, "no outline panel at \(width)")
+                XCTAssertNil(inSidebar)
+                let current = try XCTUnwrap(accessibilityElement("paperbranch.library.outline.heading-1", in: accessibilityDescendants(of: panel)))
+                XCTAssertEqual(current.value(forKey: "accessibilityValue") as? String, "Current heading")
+                let other = try XCTUnwrap(accessibilityElement("paperbranch.library.outline.heading-0", in: accessibilityDescendants(of: panel)))
+                XCTAssertNotEqual(other.value(forKey: "accessibilityValue") as? String, "Current heading")
+                // The panel sits on the window's right edge, 220 px wide.
+                let rootFrame = accessibilityFrame(of: root)
+                XCTAssertEqual(accessibilityFrame(of: panel).maxX, rootFrame.maxX, accuracy: 1)
+                XCTAssertEqual(accessibilityFrame(of: panel).width, PBSize.outlineWidth, accuracy: 1)
+            } else {
+                XCTAssertNil(panel, "outline panel shown at \(width)")
+                XCTAssertNotNil(inSidebar)
+            }
+        }
+    }
+
+    @MainActor
     func testLibrarySidebarShowsOpenNowAboveCollapsibleFolders() throws {
         let libraryURL = try makeTemporaryDirectory(named: "paperbranch-window-presentation-open-now")
         defer { try? FileManager.default.removeItem(at: libraryURL) }
