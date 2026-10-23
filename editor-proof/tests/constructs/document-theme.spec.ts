@@ -43,3 +43,10 @@ test("the column, type, and meta line follow the design skill", async ({ page })
   expect(meta!.y + meta!.height).toBeLessThanOrEqual(title!.y);
   expect(Math.round(meta!.x)).toBe(Math.round(title!.x));
 });
+
+test("list items keep list spacing instead of paragraph spacing", async ({ page }) => {
+  await load(page, "light");
+  await page.evaluate(() => window.editorContract.loadMarkdown("- Keep the column narrow.\n- Let headings breathe.\n"));
+  // Milkdown wraps each item's text in a paragraph, whose 16 px bottom margin made lists look loose.
+  expect(await css(page, "#editor-root li p", ["margin-bottom"])).toEqual(["0px"]);
+});

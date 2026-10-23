@@ -38,6 +38,8 @@
       .ProseMirror blockquote { margin: var(--space-5) 0; padding-left: var(--space-4); border-left: 2px solid var(--border); font-style: italic; color: var(--ink-muted); }
       .ProseMirror ul, .ProseMirror ol { margin: 0 0 var(--space-4); padding-left: 1.35em; }
       .ProseMirror li { margin: var(--space-1) 0; }
+      /* Milkdown wraps each item's text in a paragraph; the item's own margin spaces the list. */
+      .ProseMirror li > p { margin: 0; }
       .ProseMirror code { padding: 0.12em 0.36em; border-radius: var(--radius-s); background: var(--code-bg); color: var(--accent-text); font: 0.84em var(--font-mono); }
       .ProseMirror pre { margin: var(--space-5) 0; padding: var(--space-4) var(--space-5); overflow: auto; border-radius: var(--radius-l); background: var(--code-bg); }
       .ProseMirror pre code { padding: 0; background: transparent; color: var(--ink); font-size: var(--text-code); line-height: var(--leading-body); }
